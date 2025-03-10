@@ -99,5 +99,28 @@ python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 16 MODEL.NU
 
 python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 20 DATA.BATCH_SIZE 64 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 TRAIN.LR 0.01 TRAIN.OPTIMIZER.MOMENTUM 0.95
 
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 20 DATA.BATCH_SIZE 81920 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 TRAIN.LR 0.09 TRAIN.OPTIMIZER.MOMENTUM 0.9
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 12 DATA.BATCH_SIZE 49152 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 TRAIN.LR 1.0 TRAIN.OPTIMIZER.MOMENTUM 0.9
+
+16384*3 = 49152
+
+
 set PYTORCH_NO_CUDA_MEMORY_CACHING=1
 set LRU_CACHE_CAPACITY=1
+
+## initalize jupyter notebook
+lucas.gu@honeydew:~$ cd ~/nmep
+lucas.gu@honeydew:~/nmep$ cd /model-zhu
+-bash: cd: /model-zhu: No such file or directory
+lucas.gu@honeydew:~/nmep$ cd ~/model-zhu
+-bash: cd: /home/lucas.gu/model-zhu: No such file or directory
+lucas.gu@honeydew:~/nmep$ cd ~/nmep/model-zhu
+lucas.gu@honeydew:~/nmep/model-zhu$ cd /model-zhu
+-bash: cd: /model-zhu: No such file or directory
+lucas.gu@honeydew:~/nmep/model-zhu$ cd model-zhu
+lucas.gu@honeydew:~/nmep/model-zhu/model-zhu$ touch data/HDF5_visualizer.ipynb
+lucas.gu@honeydew:~/nmep/model-zhu/model-zhu$ source ~/miniconda3/bin/activate
+(base) lucas.gu@honeydew:~/nmep/model-zhu/model-zhu$ jupyter notebook --no-browser --port=8888
+
+on sep terminal: (base) PS C:\Users\zhiwe> ssh -L 8888:localhost:8888 lucas.gu@honeydew

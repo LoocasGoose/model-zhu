@@ -139,15 +139,28 @@ The following questions relate to `models/build.py` and `models/models.py`.
 
 ## What models are implemented for you?
 
-`YOUR ANSWER HERE`
+LeNet is implemented as a baseline model. It is a classic convolutional neural network architecture from the 1990s designed by Yann LeCun. The implementation serves as a template for implementing more complex architectures like AlexNet and ResNet.
 
 ## What do PyTorch models inherit from? What functions do we need to implement for a PyTorch Model? (hint there are 2)
 
-`YOUR ANSWER HERE`
+PyTorch models inherit from `torch.nn.Module`. The two functions we need to implement are:
+1. `__init__`: Constructor that initializes the model's layers and parameters
+2. `forward`: Defines how data flows through the model (the forward pass)
 
 ## How many layers does our implementation of LeNet have? How many parameters does it have? (hint: to count the number of parameters, you might want to run the code)
 
-`YOUR ANSWER HERE`
+The LeNet implementation has 7 layers:
+- 2 convolutional layers:
+  - Conv2d(3, 6, kernel_size=5, stride=1, padding=2)
+  - Conv2d(6, 16, kernel_size=5, stride=1, padding=0)
+- 2 pooling layers:
+  - AvgPool2d(kernel_size=2, stride=2) (×2)
+- 3 fully connected layers:
+  - Linear(16 * 6 * 6, 120)
+  - Linear(120, 84)
+  - Linear(84, num_classes)
+
+The total parameter count is approximately 61,706 parameters, with most parameters in the first fully connected layer (16 * 6 * 6 * 120 = 69,120 parameters).
 
 
 
@@ -157,16 +170,54 @@ The following questions relate to `main.py`, and the configs in `configs/`.
 
 ## 3.0 What configs have we provided for you? What models and datasets do they train on?
 
-`YOUR ANSWER HERE`
+The configs provided include:
+- `lenet_base.yaml`: LeNet on CIFAR10 with batch size 256, input size 32×32, using AdamW optimizer
+- `resnet18_base.yaml`: ResNet18 on CIFAR10 with batch size 1024, input size 32×32
+- `resnet18_medium_imagenet.yaml`: ResNet18 on Medium ImageNet with batch size 32, input size 32×32
+
+These configs specify hyperparameters including learning rates (3e-4), batch sizes, optimizers (AdamW), training schedules (cosine learning rate decay), and number of epochs.
 
 ## 3.1 Open `main.py` and go through `main()`. In bullet points, explain what the function does.
 
-`YOUR ANSWER HERE`
+The `main()` function in `main.py`:
+- Parses command line arguments and loads configuration from YAML file
+- Sets up output directory for logs and checkpoints
+- Creates logger for tracking training progress
+- Sets random seeds for reproducibility
+- Builds the model according to config specifications
+- Moves model to GPU if available
+- Creates data loaders for training, validation, and test sets
+- Sets up the optimizer (AdamW by default) and learning rate scheduler (cosine decay)
+- Loads checkpoint if resuming training
+- For each epoch:
+  - Calls train_one_epoch() for training
+  - Adjusts learning rate according to schedule
+  - Calls validate() to check performance on validation set
+  - Saves checkpoint if validation improves or at specified intervals
+- Calls evaluate() on the test set and creates submission file
+- Returns best validation accuracy
 
 ## 3.2 Go through `validate()` and `evaluate()`. What do they do? How are they different? 
 > Could we have done better by reusing code? Yes. Yes we could have but we didn't... sorry...
 
-`YOUR ANSWER HERE`
+Both functions put the model in evaluation mode, but serve different purposes:
+
+`validate()`:
+- Runs during training to check performance on validation data
+- Computes both loss and accuracy metrics on validation set
+- Has gradient computation disabled with @torch.no_grad()
+- Returns accuracy as a percentage for monitoring training progress
+- Results are used to determine if the model should be saved as "best"
+
+`evaluate()`:
+- Runs after training is complete to generate predictions on test data
+- Only computes model outputs (no loss or accuracy since test labels may not be available)
+- Also has gradient computation disabled
+- Returns raw model predictions as numpy arrays
+- Used primarily to create submission files for competitions
+- Doesn't compute metrics or return performance measures
+
+The key difference is that validate() measures performance to guide training, while evaluate() generates predictions for external evaluation/submission.
 
 
 # Part 4: AlexNet
