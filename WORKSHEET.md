@@ -28,15 +28,15 @@ Feel free to ask your NMEP friends if you don't know!
 
 ## -1.0 What is the difference between `torch.nn.Module` and `torch.nn.functional`?
 
-`YOUR ANSWER HERE`
+`torch.nn.Module` is a base class for neural network layers/blocks with learnable parameters. `torch.nn.functional` contains stateless functions for operations like activation functions and loss calculations.
 
 ## -1.1 What is the difference between a Dataset and a DataLoader?
 
-`YOUR ANSWER HERE`
+A Dataset is a class that contains the data and labels. A DataLoader is a class that wraps a Dataset and provides a way to iterate over the data in batches.
 
 ## -1.2 What does `@torch.no_grad()` above a function header do?
 
-`YOUR ANSWER HERE`
+`@torch.no_grad()` disables gradient tracking during inference to reduce memory usage and speed up computations.
 
 
 
@@ -46,25 +46,25 @@ Read through `README.md` and follow the steps to understand how the repo is stru
 
 ## 0.0 What are the `build.py` files? Why do we have them?**
 
-`YOUR ANSWER HERE`
+`build.py` files are used to build the model and data loader using the configs. They are used to separate the config parsing from the model and data loader definitions.
 
 ## 0.1 Where would you define a new model?
 
-`YOUR ANSWER HERE`
+`models/build.py`
 
 ## 0.2 How would you add support for a new dataset? What files would you need to change?
 
-`YOUR ANSWER HERE`
+`data/build.py` and `data/datasets.py` would need to be changed.
 
 ## 0.3 Where is the actual training code?
 
-`YOUR ANSWER HERE`
+`main.py`
 
 ## 0.4 Create a diagram explaining the structure of `main.py` and the entire code repo.
 
 Be sure to include the 4 main functions in it (`main`, `train_one_epoch`, `validate`, `evaluate`) and how they interact with each other. Also explain where the other files are used. No need to dive too deep into any part of the code for now, the following parts will do deeper dives into each part of the code. For now, read the code just enough to understand how the pieces come together, not necessarily the specifics. You can use any tool to create the diagram (e.g. just explain it in nice markdown, draw it on paper and take a picture, use draw.io, excalidraw, etc.)
 
-`YOUR ANSWER HERE`
+`main.py` is the main training loop. It defines the training loop, validation loop, and evaluation loop. It also handles the loading of the model, data loader, and optimizer.
 
 
 
@@ -76,53 +76,53 @@ The following questions relate to `data/build.py` and `data/datasets.py`.
 
 ### 1.0.0 What does `build_loader` do?
 
-`YOUR ANSWER HERE`
+`build_loader` is a function that builds the data loader using the config. It takes in a dataset class and returns a data loader.
 
 ### 1.0.1 What functions do you need to implement for a PyTorch Datset? (hint there are 3)
 
-`YOUR ANSWER HERE`
+`__getitem__`, `__len__`, and `__init__` are the three functions that need to be implemented for a PyTorch Dataset.
 
 ## 1.1 CIFAR10Dataset
 
 ### 1.1.0 Go through the constructor. What field actually contains the data? Do we need to download it ahead of time?
 
-`YOUR ANSWER HERE`
+`self.data` contains the data. We need to download it ahead of time.
 
 ### 1.1.1 What is `self.train`? What is `self.transform`?
 
-`YOUR ANSWER HERE`
+`self.train` is a boolean that indicates if the dataset is for training or not. `self.transform` is a function that transforms the data.
 
 ### 1.1.2 What does `__getitem__` do? What is `index`?
 
-`YOUR ANSWER HERE`
+`__getitem__` is a function that returns the item at index `index`.
 
 ### 1.1.3 What does `__len__` do?
 
-`YOUR ANSWER HERE`
+`__len__` is a function that returns the length of the dataset.
 
 ### 1.1.4 What does `self._get_transforms` do? Why is there an if statement?
 
-`YOUR ANSWER HERE`
+`self._get_transforms` is a function that returns the transforms for the dataset. The if statement is used to check if the dataset is for training or not.
 
 ### 1.1.5 What does `transforms.Normalize` do? What do the parameters mean? (hint: take a look here: https://pytorch.org/vision/main/generated/torchvision.transforms.Normalize.html)
 
-`YOUR ANSWER HERE`
+`transforms.Normalize` is a function that normalizes the data. The parameters are the mean and standard deviation of the data.
 
 ## 1.2 MediumImagenetHDF5Dataset
 
 ### 1.2.0 Go through the constructor. What field actually contains the data? Where is the data actually stored on honeydew? What other files are stored in that folder on honeydew? How large are they?
 
-`YOUR ANSWER HERE`
+`self.file` contains the data. The data is stored on honeydew at `/data/medium-imagenet/medium-imagenet-nmep-96.hdf5`. The other files are stored in that folder on honeydew. This folder contains HDF5 files for different image sizes (96x96 and 224x224) and splits (train, val, test), as well as metadata files like class names. The files are quite large - the full dataset is 1.5M training images plus 190k images each for validation and test.
 
 > *Some background*: HDF5 is a file format that stores data in a hierarchical structure. It is similar to a python dictionary. The files are binary and are generally really efficient to use. Additionally, `h5py.File()` does not actually read the entire file contents into memory. Instead, it only reads the data when you access it (as in `__getitem__`). You can learn more about [hdf5 here](https://portal.hdfgroup.org/display/HDF5/HDF5) and [h5py here](https://www.h5py.org/).
 
 ### 1.2.1 How is `_get_transforms` different from the one in CIFAR10Dataset?
 
-`YOUR ANSWER HERE`
+The _get_transforms in MediumImagenetHDF5Dataset uses different normalization values (mean and std) specific to the Medium ImageNet dataset. 
 
 ### 1.2.2 How is `__getitem__` different from the one in CIFAR10Dataset? How many data splits do we have now? Is it different from CIFAR10? Do we have labels/annotations for the test set?
 
-`YOUR ANSWER HERE`
+The __getitem__ in MediumImagenetHDF5Dataset reads data from HDF5 files rather than from memory. It has three data splits: train, val, and test (whereas CIFAR10 just has train and test). Unlike CIFAR10, the test set labels are not provided for Medium ImageNet to prevent cheating in the competition - the implementation would return -1 or None for test labels.
 
 ### 1.2.3 Visualizing the dataset
 

@@ -22,7 +22,11 @@ git clone git@github.com:mlberkeley/fa24-nmep-hw2.git
 cd fa24-nmep-hw2
 conda env create -f env.yml
 conda activate vision-zoo
-CUDA_VISIBLE_DEVICES=0 python main.py --cfg=configs/lenet_base.yaml
+$env:CUDA_VISIBLE_DEVICES=0
+python main.py --cfg=configs/lenet_base.yaml
+
+import torch
+print(f'CUDA available: {torch.cuda.is_available()}')
 ```
 
 This should begin a download and training of a LeNet(ish) model on CIFAR-10. You should see all of the output files in ```output/lenet```, but you can specify exactly where in the configs (more on that in a second).
@@ -78,3 +82,22 @@ However for when you're hacking or just testing things quickly, it's useful to n
 
 Don't try to understand everything at once, it's daunting! Treat this like you would a large class project or a software engineering project, and work in small chunks (it's why we've cleanly factored the code into modules). Ask questions, don't be afraid to test things out in jupyter notebooks or use the pdb debugger (```breakpoint()``` or ```import pdb; pdb.set_trace()```). These are all good skills to learn to become a great machine learning engineer.
 
+# Notes
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 8 DATA.BATCH_SIZE 4096
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 8 DATA.BATCH_SIZE 16384
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 8 DATA.BATCH_SIZE 16384 TRAIN.EPOCHS 10
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 16 MODEL.NUM_CLASSES 10 DATA.BATCH_SIZE 16384 TRAIN.EPOCHS 20
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 16 MODEL.NUM_CLASSES 10 DATA.BATCH_SIZE 4096 TRAIN.EPOCHS 20 TRAIN.LR 0.001 TRAIN.OPTIMIZER.MOMENTUM 0.95
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 16 MODEL.NUM_CLASSES 10 DATA.BATCH_SIZE 16384 TRAIN.EPOCHS 20 TRAIN.LR 0.01 TRAIN.OPTIMIZER.MOMENTUM 0.95
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 16 MODEL.NUM_CLASSES 10 DATA.BATCH_SIZE 65536 TRAIN.EPOCHS 20 TRAIN.LR 0.01 TRAIN.OPTIMIZER.MOMENTUM 0.95
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 20 DATA.BATCH_SIZE 64 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 TRAIN.LR 0.01 TRAIN.OPTIMIZER.MOMENTUM 0.95
+
+set PYTORCH_NO_CUDA_MEMORY_CACHING=1
+set LRU_CACHE_CAPACITY=1
