@@ -109,7 +109,7 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs):
     momentum = trial.suggest_float("momentum", 0.85, 0.99)
     
     # Use smaller batch sizes when running in parallel
-    batch_size = trial.suggest_categorical("batch_size", [32, 48, 64, 96, 128, 256, 512])
+    batch_size = trial.suggest_categorical("batch_size", [32, 64, 96, 128, 256, 512, 1024, 2048])
     activation = trial.suggest_categorical("activation", ["sigmoid"])
     weight_decay = trial.suggest_float("weight_decay", 1e-10, 1e-9, log=True)
     
@@ -259,7 +259,7 @@ def main():
     )
     
     # Define the number of parallel jobs based on GPU memory
-    n_jobs = 6  # Since you're using ~1.6GB per trial on 8GB VRAM, 4 parallel jobs should be safe
+    n_jobs = 20  # Since you're using ~1.6GB per trial on 8GB VRAM, 4 parallel jobs should be safe
     
     print(f"Starting optimization with {args.n_trials} trials, {tune_epochs} epochs each...")
     print(f"Running {n_jobs} trials in parallel!")

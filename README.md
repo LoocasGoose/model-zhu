@@ -105,6 +105,9 @@ python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 12 DATA.BAT
 
 16384*3 = 49152
 
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 32 TRAIN.LR 0.002640329447930566 TRAIN.OPTIMIZER.MOMENTUM 0.9858934559897461 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 32
+
+
 
 set PYTORCH_NO_CUDA_MEMORY_CACHING=1
 set LRU_CACHE_CAPACITY=1
@@ -119,9 +122,8 @@ lucas.gu@honeydew:~/nmep/model-zhu/model-zhu$ source ~/miniconda3/bin/activate
 
 on sep terminal: (base) PS C:\Users\zhiwe> ssh -L 8888:localhost:8888 lucas.gu@honeydew
 
-python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.00292166173166549 TRAIN.OPTIMIZER.MOMENTUM 0.9234279268109359 TRAIN.OPTIMIZER.WEIGHT_DECAY 8.152237159376888e-06 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 12
 
-python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.00292166173166549 TRAIN.OPTIMIZER.MOMENTUM 0.9234279268109359 TRAIN.OPTIMIZER.WEIGHT_DECAY 8.152237159376888e-06 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 12 MODEL.ACTIVATION relu
+
 
 Went down a rabbit hole tuning hyperparameters for the past 5 hours or so - wrote a hyperparameter tuning script and tested ~60 different combinations (can be increased). From my testing, this is one of the best intialization for lenet_base.yaml:
 ```
