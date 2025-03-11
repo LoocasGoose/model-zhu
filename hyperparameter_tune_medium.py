@@ -259,7 +259,7 @@ def main():
     )
     
     # Define the number of parallel jobs based on GPU memory
-    n_jobs = 64  # Since you're using ~1.6GB per trial on 8GB VRAM, 4 parallel jobs should be safe
+    n_jobs = 32  # Since you're using ~1.6GB per trial on 8GB VRAM, 4 parallel jobs should be safe
     
     print(f"Starting optimization with {args.n_trials} trials, {tune_epochs} epochs each...")
     print(f"Running {n_jobs} trials in parallel!")
