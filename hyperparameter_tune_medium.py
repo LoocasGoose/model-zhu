@@ -122,7 +122,7 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs):
     mutable_config.TRAIN.OPTIMIZER.MOMENTUM = momentum
     mutable_config.TRAIN.OPTIMIZER.WEIGHT_DECAY = weight_decay
     mutable_config.DATA.BATCH_SIZE = batch_size
-    mutable_config.DATA.NUM_WORKERS = 1  # Reduced workers per trial when running in parallel
+    mutable_config.DATA.NUM_WORKERS = 3  # Reduced workers per trial when running in parallel
     
     # Freeze the config
     mutable_config.freeze()
@@ -139,7 +139,7 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs):
             dataset_train, 
             batch_size=batch_size,
             shuffle=True,
-            num_workers=2,  # More workers to use more CPU and memory
+            num_workers=3,  # More workers to use more CPU and memory
             pin_memory=True
         )
         
@@ -147,7 +147,7 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs):
             dataset_val,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=2,  # More workers
+            num_workers=3,  # More workers
             pin_memory=True
         )
         
@@ -259,7 +259,7 @@ def main():
     )
     
     # Define the number of parallel jobs based on GPU memory
-    n_jobs = 4  # Since you're using ~1.6GB per trial on 8GB VRAM, 4 parallel jobs should be safe
+    n_jobs = 6  # Since you're using ~1.6GB per trial on 8GB VRAM, 4 parallel jobs should be safe
     
     print(f"Starting optimization with {args.n_trials} trials, {tune_epochs} epochs each...")
     print(f"Running {n_jobs} trials in parallel!")
