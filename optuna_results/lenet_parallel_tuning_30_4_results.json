@@ -1,0 +1,375 @@
+{
+  "best_trial": {
+    "value": 63.44,
+    "params": {
+      "learning_rate": 0.00292166173166549,
+      "momentum": 0.9234279268109359,
+      "batch_size": 64,
+      "activation": "relu",
+      "weight_decay": 8.152237159376888e-06
+    },
+    "command": "python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.00292166173166549 TRAIN.OPTIMIZER.MOMENTUM 0.9234279268109359 TRAIN.OPTIMIZER.WEIGHT_DECAY 8.152237159376888e-06 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 30 DATA.NUM_WORKERS 8"
+  },
+  "all_trials": [
+    {
+      "trial_id": 0,
+      "value": 10.0,
+      "params": {
+        "learning_rate": 0.4266079010290949,
+        "momentum": 0.9698152701907834,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 4.497547253598306e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 1,
+      "value": 10.0,
+      "params": {
+        "learning_rate": 0.18886013053764525,
+        "momentum": 0.9039817531883149,
+        "batch_size": 256,
+        "activation": "relu",
+        "weight_decay": 6.3462455756050316e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 2,
+      "value": 10.0,
+      "params": {
+        "learning_rate": 0.19972143530323855,
+        "momentum": 0.8707735839894538,
+        "batch_size": 256,
+        "activation": "sigmoid",
+        "weight_decay": 0.0005215982971139787
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 3,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.004499412489244445,
+        "momentum": 0.9437273199775144,
+        "batch_size": 128,
+        "activation": "tanh",
+        "weight_decay": 0.00024451337856755504
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 4,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.024195297831577964,
+        "momentum": 0.8943756527167476,
+        "batch_size": 128,
+        "activation": "sigmoid",
+        "weight_decay": 2.470308306259369e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 5,
+      "value": 10.0,
+      "params": {
+        "learning_rate": 0.17543794894983966,
+        "momentum": 0.9708803204689884,
+        "batch_size": 256,
+        "activation": "relu",
+        "weight_decay": 2.250839188088594e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 6,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.020340518089022225,
+        "momentum": 0.8512870949651,
+        "batch_size": 128,
+        "activation": "tanh",
+        "weight_decay": 1.1461466725165654e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 7,
+      "value": 35.98999997558594,
+      "params": {
+        "learning_rate": 0.023158287907373083,
+        "momentum": 0.8573622214125085,
+        "batch_size": 512,
+        "activation": "tanh",
+        "weight_decay": 3.140780822500883e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 8,
+      "value": 63.44,
+      "params": {
+        "learning_rate": 0.00292166173166549,
+        "momentum": 0.9234279268109359,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 8.152237159376888e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 9,
+      "value": 52.93,
+      "params": {
+        "learning_rate": 0.00190765940362614,
+        "momentum": 0.9259674736788479,
+        "batch_size": 64,
+        "activation": "tanh",
+        "weight_decay": 0.00010515842160163193
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 10,
+      "value": 42.03,
+      "params": {
+        "learning_rate": 0.008593960789955894,
+        "momentum": 0.9765818473759353,
+        "batch_size": 64,
+        "activation": "tanh",
+        "weight_decay": 2.4976382656326208e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 11,
+      "value": 10.0,
+      "params": {
+        "learning_rate": 0.05554984644844411,
+        "momentum": 0.8532383095102803,
+        "batch_size": 256,
+        "activation": "sigmoid",
+        "weight_decay": 0.00012359656414786377
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 12,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.07417426482238727,
+        "momentum": 0.8590640568889287,
+        "batch_size": 128,
+        "activation": "tanh",
+        "weight_decay": 1.1548569404460743e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 13,
+      "value": 59.16,
+      "params": {
+        "learning_rate": 0.0012294355987085442,
+        "momentum": 0.9372051638468303,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 2.1255552998280135e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 14,
+      "value": 60.07,
+      "params": {
+        "learning_rate": 0.0014326121299457204,
+        "momentum": 0.9419652596286029,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 3.146780839138985e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 15,
+      "value": 54.58,
+      "params": {
+        "learning_rate": 0.001043775489012314,
+        "momentum": 0.9339686899523866,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 3.1899447611167424e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 16,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.0010646227685965136,
+        "momentum": 0.9327615474733124,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 8.046336836833787e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 17,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.0010091642271815855,
+        "momentum": 0.9425119461492883,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 2.765631130729166e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 18,
+      "value": 62.47,
+      "params": {
+        "learning_rate": 0.0025647290958604498,
+        "momentum": 0.9505993423689229,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 5.645296842033049e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 19,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.003458671624515617,
+        "momentum": 0.9540674819499019,
+        "batch_size": 512,
+        "activation": "relu",
+        "weight_decay": 5.014319421202492e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 20,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.003182127754146594,
+        "momentum": 0.9523820887530103,
+        "batch_size": 512,
+        "activation": "relu",
+        "weight_decay": 1.4426829480038172e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 21,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.0034585452943644134,
+        "momentum": 0.911520336242979,
+        "batch_size": 512,
+        "activation": "relu",
+        "weight_decay": 1.0422226935063529e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 22,
+      "value": 59.48,
+      "params": {
+        "learning_rate": 0.00462579801908481,
+        "momentum": 0.910884199477639,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 1.0276999142514182e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 23,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.007440408143213347,
+        "momentum": 0.9895093361170412,
+        "batch_size": 512,
+        "activation": "relu",
+        "weight_decay": 1.0986343320843373e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 24,
+      "value": 57.75,
+      "params": {
+        "learning_rate": 0.0066994774508850495,
+        "momentum": 0.9099306772950335,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 7.341281260125701e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 25,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.008279978103635238,
+        "momentum": 0.9184130962294541,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 5.384021134363573e-05
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 26,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.0068527949645624895,
+        "momentum": 0.9892363580513349,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 7.227047338404104e-06
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 27,
+      "value": 60.43,
+      "params": {
+        "learning_rate": 0.001993790478989067,
+        "momentum": 0.956958060181665,
+        "batch_size": 64,
+        "activation": "relu",
+        "weight_decay": 0.00042026083712738823
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 28,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.0017877164471024303,
+        "momentum": 0.956855694982493,
+        "batch_size": 64,
+        "activation": "sigmoid",
+        "weight_decay": 0.00026534679800644306
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 29,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.0018665730507109555,
+        "momentum": 0.9554070968494776,
+        "batch_size": 64,
+        "activation": "sigmoid",
+        "weight_decay": 0.00015614848796463088
+      },
+      "state": "TrialState.COMPLETE"
+    }
+  ]
+}

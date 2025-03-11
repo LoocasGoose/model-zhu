@@ -1,0 +1,135 @@
+{
+  "best_trial": {
+    "value": 53.25,
+    "params": {
+      "learning_rate": 0.007568304298229739,
+      "momentum": 0.9540690887792035,
+      "batch_size": 64,
+      "activation": "sigmoid",
+      "weight_decay": 1.7241465228986456e-10
+    },
+    "command": "python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.007568304298229739 TRAIN.OPTIMIZER.MOMENTUM 0.9540690887792035 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 12"
+  },
+  "all_trials": [
+    {
+      "trial_id": 0,
+      "value": 15.419999981689454,
+      "params": {
+        "learning_rate": 0.0013306413896349626,
+        "momentum": 0.9053578081196676,
+        "batch_size": 512,
+        "activation": "sigmoid",
+        "weight_decay": 7.453202228303574e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 1,
+      "value": 10.0,
+      "params": {
+        "learning_rate": 0.20623394485298077,
+        "momentum": 0.8823463582571215,
+        "batch_size": 256,
+        "activation": "sigmoid",
+        "weight_decay": 1.470880404000032e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 2,
+      "value": 53.25,
+      "params": {
+        "learning_rate": 0.007568304298229739,
+        "momentum": 0.9540690887792035,
+        "batch_size": 64,
+        "activation": "sigmoid",
+        "weight_decay": 1.7241465228986456e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 3,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.03569014582399256,
+        "momentum": 0.8738430710865192,
+        "batch_size": 64,
+        "activation": "sigmoid",
+        "weight_decay": 1.8063280077117779e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 4,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.013158547309391467,
+        "momentum": 0.9745538487798941,
+        "batch_size": 512,
+        "activation": "sigmoid",
+        "weight_decay": 1.865721361221063e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 5,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.018033882982815372,
+        "momentum": 0.9355340096291213,
+        "batch_size": 256,
+        "activation": "sigmoid",
+        "weight_decay": 6.600262095361402e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 6,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.028725818280697757,
+        "momentum": 0.9428187577522759,
+        "batch_size": 128,
+        "activation": "sigmoid",
+        "weight_decay": 1.169627627928777e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 7,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.004015626937836221,
+        "momentum": 0.8876423663204891,
+        "batch_size": 128,
+        "activation": "sigmoid",
+        "weight_decay": 2.3236153337510303e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 8,
+      "value": -Infinity,
+      "params": {
+        "learning_rate": 0.004674856923494469,
+        "momentum": 0.9256799866159635,
+        "batch_size": 64,
+        "activation": "sigmoid",
+        "weight_decay": 7.029184425925757e-10
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "trial_id": 9,
+      "value": 23.88,
+      "params": {
+        "learning_rate": 0.0030050276707515905,
+        "momentum": 0.9045635669857972,
+        "batch_size": 256,
+        "activation": "sigmoid",
+        "weight_decay": 5.558130858566479e-10
+      },
+      "state": "TrialState.COMPLETE"
+    }
+  ]
+}

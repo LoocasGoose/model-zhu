@@ -111,16 +111,32 @@ set LRU_CACHE_CAPACITY=1
 
 ## initalize jupyter notebook
 lucas.gu@honeydew:~$ cd ~/nmep
-lucas.gu@honeydew:~/nmep$ cd /model-zhu
--bash: cd: /model-zhu: No such file or directory
-lucas.gu@honeydew:~/nmep$ cd ~/model-zhu
--bash: cd: /home/lucas.gu/model-zhu: No such file or directory
 lucas.gu@honeydew:~/nmep$ cd ~/nmep/model-zhu
-lucas.gu@honeydew:~/nmep/model-zhu$ cd /model-zhu
--bash: cd: /model-zhu: No such file or directory
 lucas.gu@honeydew:~/nmep/model-zhu$ cd model-zhu
 lucas.gu@honeydew:~/nmep/model-zhu/model-zhu$ touch data/HDF5_visualizer.ipynb
 lucas.gu@honeydew:~/nmep/model-zhu/model-zhu$ source ~/miniconda3/bin/activate
 (base) lucas.gu@honeydew:~/nmep/model-zhu/model-zhu$ jupyter notebook --no-browser --port=8888
 
 on sep terminal: (base) PS C:\Users\zhiwe> ssh -L 8888:localhost:8888 lucas.gu@honeydew
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.00292166173166549 TRAIN.OPTIMIZER.MOMENTUM 0.9234279268109359 TRAIN.OPTIMIZER.WEIGHT_DECAY 8.152237159376888e-06 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 12
+
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.00292166173166549 TRAIN.OPTIMIZER.MOMENTUM 0.9234279268109359 TRAIN.OPTIMIZER.WEIGHT_DECAY 8.152237159376888e-06 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 12 MODEL.ACTIVATION relu
+
+Went down a rabbit hole tuning hyperparameters for the past 5 hours or so - wrote a hyperparameter tuning script and tested ~60 different combinations (can be increased). From my testing, this is one of the best intialization for lenet_base.yaml:
+```
+python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.007568304298229739 TRAIN.OPTIMIZER.MOMENTUM 0.9540690887792035 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 6
+```
+Got 68% accuracy after 20 epochs (approaching the limit of 70% validation accuracy for a very basic lenet).
+
+I've attached the hyperparameter tuning script if you want to find the best hyperparameters for yourself. I used optuna hyperparameter optimization framework and Hyperband pruning to speed up the process. More details are in the script.
+
+(I crashed my computer 6+ times cuz memory allocation issues yippee)
+
+
+
+
+
+
+
+
