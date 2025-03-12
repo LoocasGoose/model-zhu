@@ -16,43 +16,55 @@ def build_model(config):
     elif model_type == 'alexnet':
         model = AlexNet(num_classes=config.MODEL.NUM_CLASSES)
     elif model_type == 'densenet':
-        # Get the densenet type
-        densenet_type = config.MODEL.get('TYPE', '121')
-        attention = config.MODEL.get('ATTENTION', 'se')
-        activation = config.MODEL.get('ACTIVATION', 'swish')
-        attention_pooling = config.MODEL.get('ATTENTION_POOLING', False)
-        stochastic_depth = config.MODEL.get('STOCHASTIC_DEPTH', 0.0)
+        # Use densenet121 by default, but allow command-line override 
+        # via the --opts feature for different model variations
+        model_variation = getattr(config, 'VARIATION', '121')
         
-        # Select the appropriate DenseNet model based on type
-        if densenet_type == '121':
-            model = DenseNet121(
-                num_classes=config.MODEL.NUM_CLASSES,
-                small_inputs=True,
-                use_attention=attention,
-                activation=activation,
-                use_attention_pooling=attention_pooling,
-                stochastic_depth_prob=stochastic_depth
-            )
-        elif densenet_type == '169':
+        # Default parameters that can be overridden via command line options
+        small_inputs = True
+        use_attention = 'se'
+        activation = 'swish'
+        attention_pooling = False
+        stochastic_depth = 0.0
+        
+        # Override defaults if specified via command line options
+        if hasattr(config, 'DENSENET_ATTENTION'):
+            use_attention = config.DENSENET_ATTENTION
+        if hasattr(config, 'DENSENET_ACTIVATION'):
+            activation = config.DENSENET_ACTIVATION
+        if hasattr(config, 'DENSENET_ATTENTION_POOLING'):
+            attention_pooling = config.DENSENET_ATTENTION_POOLING
+        if hasattr(config, 'DENSENET_STOCHASTIC_DEPTH'):
+            stochastic_depth = config.DENSENET_STOCHASTIC_DEPTH
+        
+        # Select the appropriate DenseNet model based on variation
+        if model_variation == '169':
             model = DenseNet169(
                 num_classes=config.MODEL.NUM_CLASSES,
-                small_inputs=True,
-                use_attention=attention,
+                small_inputs=small_inputs,
+                use_attention=use_attention,
                 activation=activation,
                 use_attention_pooling=attention_pooling,
                 stochastic_depth_prob=stochastic_depth
             )
-        elif densenet_type == '201':
+        elif model_variation == '201':
             model = DenseNet201(
                 num_classes=config.MODEL.NUM_CLASSES,
-                small_inputs=True,
-                use_attention=attention,
+                small_inputs=small_inputs,
+                use_attention=use_attention,
                 activation=activation,
                 use_attention_pooling=attention_pooling,
                 stochastic_depth_prob=stochastic_depth
             )
-        else:
-            raise ValueError(f"Invalid densenet type: {densenet_type}")
+        else:  # Default to 121
+            model = DenseNet121(
+                num_classes=config.MODEL.NUM_CLASSES,
+                small_inputs=small_inputs,
+                use_attention=use_attention,
+                activation=activation,
+                use_attention_pooling=attention_pooling,
+                stochastic_depth_prob=stochastic_depth
+            )
     # elif model_type == 'resnet34':
     #     model = ResNet34(num_classes=config.MODEL.NUM_CLASSES)
     # elif model_type == 'resnet50':
