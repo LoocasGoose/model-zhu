@@ -57,6 +57,9 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs):
     return best_acc  # Ensure this returns a float
 
 def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
+    # Move model to GPU
+    model = model.cuda()  # Ensure the model is on the GPU
+    
     # Create data loaders
     data_loader_train = torch.utils.data.DataLoader(dataset_train, batch_size=32, shuffle=True)
     data_loader_val = torch.utils.data.DataLoader(dataset_val, batch_size=32, shuffle=False)
@@ -70,7 +73,7 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
         # Training loop
         model.train()
         for images, targets in data_loader_train:
-            images, targets = images.cuda(), targets.cuda()
+            images, targets = images.cuda(), targets.cuda()  # Ensure data is on the GPU
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, targets)
@@ -83,7 +86,7 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
         total = 0
         with torch.no_grad():
             for images, targets in data_loader_val:
-                images, targets = images.cuda(), targets.cuda()
+                images, targets = images.cuda(), targets.cuda()  # Ensure data is on the GPU
                 outputs = model(images)
                 _, predicted = torch.max(outputs.data, 1)
                 total += targets.size(0)
