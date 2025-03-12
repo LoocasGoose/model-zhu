@@ -247,6 +247,13 @@ def main():
             }, f, indent=2)
     else:
         print("No successful trials completed")
+    
+    # Output the best parameters and accuracy
+    print("\nBest Parameters and Accuracy:")
+    if study.best_trial:
+        print(f"Best Accuracy: {study.best_trial.value:.2f}%")
+        for key, value in study.best_trial.params.items():
+            print(f"{key}: {value}")
 
 if __name__ == "__main__":
     main() 

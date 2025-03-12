@@ -127,10 +127,7 @@ on sep terminal: (base) PS C:\Users\zhiwe> ssh -L 8888:localhost:8888 lucas.gu@h
 
 Alexnet: 
 Epoch 20, Max accuracy: 82.44%: python main.py --cfg=configs/alexnet.yaml
-
-
-
-
+Epoch 20, Max accuracy: : CUDA_VISIBLE_DEVICES=5 python main.py --cfg=configs/alexnet.yaml --opts TRAIN.LR 0.0028103458835106766 DATA.BATCH_SIZE 128 MODEL.DROP_RATE 0.194622390825491
 
 
 
