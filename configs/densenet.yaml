@@ -5,8 +5,8 @@ DATA:
   DATASET: 'medium_imagenet'  # Uses the existing MediumImagenetHDF5Dataset
   MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'  # Path to HDF5 file
   IMG_SIZE: 96  
-  BATCH_SIZE: 48  # Significantly reduced batch size
-  NUM_WORKERS: 4
+  BATCH_SIZE: 32  # Significantly reduced batch size
+  NUM_WORKERS: 2
   PIN_MEMORY: true
 
 MODEL:
