@@ -1,7 +1,7 @@
 from .lenet import LeNet
 from .resnet import ResNet18
 from models.alexnet import AlexNet
-from .densenet import DenseNetAdvanced121, DenseNetAdvanced169, DenseNetAdvanced201
+from .densenet import DenseNet121, DenseNet169, DenseNet201
 
 
 def build_model(config):
@@ -15,32 +15,35 @@ def build_model(config):
         model = ResNet18(num_classes=config.MODEL.NUM_CLASSES)
     elif model_type == 'alexnet':
         model = AlexNet(num_classes=config.MODEL.NUM_CLASSES)
-    elif model_type == 'densenet_advanced121':
-        model = DenseNetAdvanced121(
+    elif model_type == 'densenet121':
+        model = DenseNet121(
             num_classes=config.MODEL.NUM_CLASSES, 
             small_inputs=config.MODEL.get('SMALL_INPUTS', True),
-            use_se=config.MODEL.get('USE_SE', True),
-            se_reduction=config.MODEL.get('SE_REDUCTION', 16),
+            use_attention=config.MODEL.get('ATTENTION', 'se'),
+            reduction_ratio=config.MODEL.get('REDUCTION_RATIO', 16),
             dropout_rate=config.MODEL.get('DROP_RATE', 0.2),
-            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0)
+            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0),
+            activation=config.MODEL.get('ACTIVATION', 'swish')
         )
-    elif model_type == 'densenet_advanced169':
-        model = DenseNetAdvanced169(
+    elif model_type == 'densenet169':
+        model = DenseNet169(
             num_classes=config.MODEL.NUM_CLASSES, 
             small_inputs=config.MODEL.get('SMALL_INPUTS', True),
-            use_se=config.MODEL.get('USE_SE', True),
-            se_reduction=config.MODEL.get('SE_REDUCTION', 16),
+            use_attention=config.MODEL.get('ATTENTION', 'se'),
+            reduction_ratio=config.MODEL.get('REDUCTION_RATIO', 16),
             dropout_rate=config.MODEL.get('DROP_RATE', 0.2),
-            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0)
+            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0),
+            activation=config.MODEL.get('ACTIVATION', 'swish')
         )
-    elif model_type == 'densenet_advanced201':
-        model = DenseNetAdvanced201(
+    elif model_type == 'densenet201':
+        model = DenseNet201(
             num_classes=config.MODEL.NUM_CLASSES, 
             small_inputs=config.MODEL.get('SMALL_INPUTS', True),
-            use_se=config.MODEL.get('USE_SE', True),
-            se_reduction=config.MODEL.get('SE_REDUCTION', 16),
+            use_attention=config.MODEL.get('ATTENTION', 'se'),
+            reduction_ratio=config.MODEL.get('REDUCTION_RATIO', 16),
             dropout_rate=config.MODEL.get('DROP_RATE', 0.2),
-            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0)
+            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0),
+            activation=config.MODEL.get('ACTIVATION', 'swish')
         )
     # elif model_type == 'resnet34':
     #     model = ResNet34(num_classes=config.MODEL.NUM_CLASSES)
