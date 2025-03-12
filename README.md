@@ -24,7 +24,7 @@ conda env create -f env.yml
 conda activate vision-zoo
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
-CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/densenet.yaml --data_path /honey/nmep/medium-imagenet-96.hdf5 --batch_size 32 --model_type 169 --attention cbam --activation mish --epochs 50
+CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/densenet.yaml --opts MODEL.TYPE 169 MODEL.ATTENTION cbam MODEL.ACTIVATION mish TRAIN.EPOCHS 50
 
 import torch
 print(f'CUDA available: {torch.cuda.is_available()}')

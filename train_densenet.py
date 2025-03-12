@@ -301,8 +301,8 @@ def train_model(args: Union[argparse.Namespace, SimpleNamespace]):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
     
-    # Get dataset parameters
-    data_path = get_attribute(args, 'data_path', '/honey/nmep/medium-imagenet-96.hdf5')
+    # Hardcoded dataset path - no longer accepts user input
+    data_path = '/honey/nmep/medium-imagenet-96.hdf5'
     val_split = get_attribute(args, 'val_split', 0.1)
     num_workers = get_attribute(args, 'num_workers', 4)
     
@@ -532,8 +532,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train DenseNet on medium-imagenet")
     
     # Dataset parameters
-    parser.add_argument('--data-path', type=str, default='/honey/nmep/medium-imagenet-96.hdf5',
-                        help='Path to the HDF5 dataset file')
+    # Removed data-path parameter since it's hardcoded now
     parser.add_argument('--val-split', type=float, default=0.1,
                         help='Proportion of data to use for validation')
     parser.add_argument('--num-workers', type=int, default=4,

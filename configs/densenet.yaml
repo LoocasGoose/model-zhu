@@ -1,7 +1,7 @@
 # DenseNet Training Configuration
 
 # Dataset Configuration
-data_path: '/honey/nmep/medium-imagenet-96.hdf5'
+# data_path is now hardcoded in the training script
 val_split: 0.1
 num_workers: 4
 
