@@ -35,16 +35,23 @@ def build_loader(config):
     else:
         raise NotImplementedError
 
+    # Print total size of original dataset
+    full_size = len(dataset_train)
+    print(f"Full training dataset size: {full_size} samples")
+
     # Apply subsetting to training data if specified
-    if hasattr(config.DATA, 'SUBSET_FRACTION') and config.DATA.SUBSET_FRACTION < 1.0:
-        subset_size = int(len(dataset_train) * config.DATA.SUBSET_FRACTION)
+    if hasattr(config.DATA, 'SUBSET_FRACTION') and 0.0 < config.DATA.SUBSET_FRACTION < 1.0:
+        subset_size = int(full_size * config.DATA.SUBSET_FRACTION)
         if subset_size <= 0:
             subset_size = 1  # Ensure at least one sample is used
         
         # Use random indices for the subset
-        indices = random.sample(range(len(dataset_train)), subset_size)
+        indices = random.sample(range(full_size), subset_size)
         dataset_train = Subset(dataset_train, indices)
         print(f"Using {subset_size} samples ({config.DATA.SUBSET_FRACTION:.2%} of original dataset) for training")
+    else:
+        # Using full dataset
+        print(f"Using full dataset ({full_size} samples) for training")
 
     # Determine if we can use persistent workers (only supported in PyTorch 1.7.0+)
     persistent_workers = config.DATA.NUM_WORKERS > 0

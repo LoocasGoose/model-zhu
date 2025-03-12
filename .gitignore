@@ -6,3 +6,4 @@ densenet_main.py
 train_densenet.py
 models/densenet.py
 configs/densenet.yaml
+all_initializations.md

@@ -144,8 +144,13 @@ def update_config(config, args):
         config.merge_from_list(args.opts)
 
     def _check_args(name):
-        if hasattr(args, name) and eval(f"args.{name}"):
-            return True
+        if hasattr(args, name):
+            # Special handling for subset_fraction to allow 0.0 value
+            if name == "subset_fraction":
+                return args.subset_fraction is not None
+            # For other arguments, use the original check
+            else:
+                return eval(f"args.{name}")
         return False
 
     # merge from specific arguments
