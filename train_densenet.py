@@ -309,6 +309,9 @@ def train_model(args: Union[argparse.Namespace, SimpleNamespace]):
     logger.info(f"Loading dataset from {data_path}")
     dataset = HDF5Dataset(data_path)
     
+    # Use the discovered labels key for getting class count
+    labels_key = dataset.labels_key
+    
     # Split dataset into train and validation
     val_size = int(len(dataset) * val_split)
     train_size = len(dataset) - val_size
@@ -347,7 +350,7 @@ def train_model(args: Union[argparse.Namespace, SimpleNamespace]):
     # Get class count from the dataset
     with h5py.File(data_path, 'r') as h5_file:
         # Get unique labels - properly casting to numpy array first
-        labels = np.array(h5_file['labels'])
+        labels = np.array(h5_file[labels_key])
         num_classes = len(np.unique(labels))
     
     logger.info(f"Dataset has {num_classes} classes")
