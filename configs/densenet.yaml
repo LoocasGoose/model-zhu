@@ -4,8 +4,8 @@ DATA:
   # Dataset Configuration
   DATASET: 'medium_imagenet'  # Uses the existing MediumImagenetHDF5Dataset
   MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'  # Path to HDF5 file
-  IMG_SIZE: 96  # Image size
-  BATCH_SIZE: 32
+  IMG_SIZE: 96  
+  BATCH_SIZE: 8  # Significantly reduced batch size
   NUM_WORKERS: 2
   PIN_MEMORY: true
 
@@ -16,8 +16,10 @@ MODEL:
 TRAIN:
   EPOCHS: 100
   LR: 0.001
+  WEIGHT_DECAY: 0.0001
   OPTIMIZER:
     NAME: 'adamw'  # For compatibility with main.py
+  AMP_OPT_LEVEL: 'O1'  # Enable mixed precision training
 
 # Other Parameters
 SEED: 42
