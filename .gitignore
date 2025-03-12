@@ -3,3 +3,6 @@ checkpoints
 *pycache*
 output
 models/DENSENET_README.md
+train_densenet121.py
+models/densenet.py
+
