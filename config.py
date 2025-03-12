@@ -25,6 +25,8 @@ base_config.DATA = CN()
 base_config.DATA.BATCH_SIZE = 128
 # Path to dataset, could be overwritten by command line argument
 base_config.DATA.DATA_PATH = ""
+# Path specifically for Medium ImageNet dataset HDF5 file
+base_config.DATA.MEDIUM_IMAGENET_PATH = ""
 # Dataset name
 base_config.DATA.DATASET = "cifar"
 # Input image size
@@ -48,6 +50,8 @@ base_config.MODEL.RESUME = ""
 base_config.MODEL.NUM_CLASSES = 1000
 # Dropout rate
 base_config.MODEL.DROP_RATE = 0.0
+# Whether to use small inputs architecture (for CIFAR-sized inputs)
+base_config.MODEL.SMALL_INPUTS = True
 
 # Resnet Transformer parameters
 base_config.MODEL.RESNET = CN()

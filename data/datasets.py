@@ -57,7 +57,7 @@ class MediumImagenetHDF5Dataset(Dataset):
         self,
         img_size,
         split: str = "train",
-        filepath: str = "/data/medium-imagenet/medium-imagenet-nmep-96.hdf5",
+        filepath: str | None = None,
         augment: bool = True,
     ):
         assert split in ["train", "val", "test"]
@@ -65,7 +65,21 @@ class MediumImagenetHDF5Dataset(Dataset):
         self.augment = augment
         self.input_size = img_size
         self.transform = self._get_transforms()
-        self.file = h5py.File(filepath, "r")
+        
+        # Use the provided filepath or default to /data/imagenet
+        if filepath is None or filepath == "":
+            # Default path for Medium ImageNet on honeydew
+            default_path = "/data/imagenet/medium-imagenet-nmep-96.hdf5"
+            try:
+                self.file = h5py.File(default_path, "r")
+                print(f"Successfully loaded dataset from {default_path}")
+            except (IOError, OSError) as e:
+                raise FileNotFoundError(
+                    f"Could not find the Medium ImageNet dataset at {default_path}. "
+                    "Please specify the correct path using the DATA.MEDIUM_IMAGENET_PATH config option."
+                )
+        else:
+            self.file = h5py.File(filepath, "r")
 
     def __getitem__(self, index):
         image = self.file[f"images-{self.split}"][index]

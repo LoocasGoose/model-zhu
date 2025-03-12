@@ -3,6 +3,8 @@ AUG:
 DATA:
   BATCH_SIZE: 64
   DATASET: "medium_imagenet"
+  # Leave empty to use default path: /data/imagenet/medium-imagenet-nmep-96.hdf5
+  MEDIUM_IMAGENET_PATH: ""
   IMG_SIZE: 32
   NUM_WORKERS: 32
   PIN_MEMORY: True

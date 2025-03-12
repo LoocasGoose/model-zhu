@@ -334,7 +334,6 @@ The dataset is downloaded onto honeydew at `/data/medium-imagenet`. Feel free to
 
 For the kaggle competition, you need to train on the 1.5M training images and submit predictions on the 190k test images. You may validate on the validation set but you may not use is as a training set to get better accuracy (aka don't backprop on it). The test set labels are not provided. You can submit up to 10 times a day (hint: that's a lot). The competition ends on __TBD__.
 
-
 Your Kaggle scores should approximately match your validation scores. If they do not, something is wrong.
 
 (Soon) when you run the training script, it will output a file called `submission.csv`. This is the file you need to submit to Kaggle. You're required to submit at least once. 

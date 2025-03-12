@@ -9,9 +9,27 @@ def build_loader(config):
         dataset_val = CIFAR10Dataset(img_size=config.DATA.IMG_SIZE, train=False)
         dataset_test = CIFAR10Dataset(img_size=config.DATA.IMG_SIZE, train=False)
     elif config.DATA.DATASET == "medium_imagenet":
-        dataset_train = MediumImagenetHDF5Dataset(config.DATA.IMG_SIZE, split="train", augment=True)
-        dataset_val = MediumImagenetHDF5Dataset(config.DATA.IMG_SIZE, split="val", augment=False)
-        dataset_test = MediumImagenetHDF5Dataset(config.DATA.IMG_SIZE, split="test", augment=False)
+        # Get filepath from config - empty string will trigger the default path in the dataset class
+        filepath = config.DATA.MEDIUM_IMAGENET_PATH
+        
+        dataset_train = MediumImagenetHDF5Dataset(
+            config.DATA.IMG_SIZE,
+            split="train",
+            filepath=filepath,
+            augment=True
+        )
+        dataset_val = MediumImagenetHDF5Dataset(
+            config.DATA.IMG_SIZE,
+            split="val",
+            filepath=filepath,
+            augment=False
+        )
+        dataset_test = MediumImagenetHDF5Dataset(
+            config.DATA.IMG_SIZE,
+            split="test",
+            filepath=filepath,
+            augment=False
+        )
     else:
         raise NotImplementedError
 
