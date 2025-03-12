@@ -29,12 +29,12 @@ class AlexNet(nn.Module):
         self.conv3 = nn.Conv2d(192, 384, kernel_size=3, padding=1)
         self.conv4 = nn.Conv2d(384, 256, kernel_size=3, padding=1)
         self.conv5 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2)
+        self.adaptive_avg_pool = nn.AdaptiveAvgPool2d((6, 6))
         self.fc1 = nn.Linear(256 * 6 * 6, 4096)
         self.fc2 = nn.Linear(4096, 4096)
         self.fc3 = nn.Linear(4096, num_classes)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2)
         self.dropout = nn.Dropout(0.5)
-        self.adaptive_avg_pool = nn.AdaptiveAvgPool2d((6, 6))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv1(x)
