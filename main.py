@@ -13,6 +13,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import Dataset  # For custom datasets
 from tqdm import tqdm
 from fvcore.nn import FlopCountAnalysis, flop_count_str
+from torch.cuda.amp import GradScaler, autocast  # Import for mixed precision training
 
 from config import get_config
 from data import build_loader
@@ -49,6 +50,9 @@ def parse_option():
 
 
 def main(config):
+    # Enable cuDNN benchmark for faster performance
+    torch.backends.cudnn.benchmark = True
+    
     dataset_train, dataset_val, dataset_test, data_loader_train, data_loader_val, data_loader_test = build_loader(
         config
     )
@@ -76,6 +80,9 @@ def main(config):
     criterion = torch.nn.CrossEntropyLoss()
     lr_scheduler = CosineAnnealingLR(optimizer, config.TRAIN.EPOCHS)
 
+    # Initialize gradient scaler for mixed precision training
+    scaler = GradScaler()
+
     max_accuracy = 0.0
 
     if config.MODEL.RESUME:
@@ -88,20 +95,27 @@ def main(config):
     logger.info("Start training")
     start_time = time.time()
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
-        train_acc1, train_loss = train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch)
+        train_acc1, train_loss = train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, scaler)
         logger.info(f" * Train Acc {train_acc1:.3f} Train Loss {train_loss:.3f}")
         logger.info(f"Accuracy of the network on the {len(dataset_train)} train images: {train_acc1:.1f}%")
 
-        # train_acc1, _ = validate(config, data_loader_train, model)
-        val_acc1, val_loss = validate(config, data_loader_val, model)
-        logger.info(f" * Val Acc {val_acc1:.3f} Val Loss {val_loss:.3f}")
-        logger.info(f"Accuracy of the network on the {len(dataset_val)} val images: {val_acc1:.1f}%")
+        # Only validate every 5 epochs to speed up training, except for the last epoch
+        if epoch % 5 == 0 or epoch == (config.TRAIN.EPOCHS - 1):
+            val_acc1, val_loss = validate(config, data_loader_val, model)
+            logger.info(f" * Val Acc {val_acc1:.3f} Val Loss {val_loss:.3f}")
+            logger.info(f"Accuracy of the network on the {len(dataset_val)} val images: {val_acc1:.1f}%")
+            
+            # Update max_accuracy
+            max_accuracy = max(max_accuracy, val_acc1)
+            logger.info(f"Max accuracy: {max_accuracy:.2f}%\n")
+        else:
+            # Skip validation this epoch
+            val_acc1, val_loss = -1, -1
+            logger.info(f"Skipping validation for epoch {epoch} to speed up training")
 
         if epoch % config.SAVE_FREQ == 0 or epoch == (config.TRAIN.EPOCHS - 1):
             save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger)
 
-        max_accuracy = max(max_accuracy, val_acc1)
-        logger.info(f"Max accuracy: {max_accuracy:.2f}%\n")
         lr_scheduler.step()
 
         log_stats = {"epoch": epoch, "n_params": n_parameters, "n_flops": n_flops,
@@ -122,7 +136,7 @@ def main(config):
     # TODO save predictions to csv in kaggle format
 
 
-def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch):
+def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, scaler):
     model.train()
 
     num_steps = len(data_loader)
@@ -136,14 +150,22 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch):
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
 
-        optimizer.zero_grad()
-        outputs = model(samples)
+        optimizer.zero_grad(set_to_none=True)  # Faster than .zero_grad()
+        
+        # Use automatic mixed precision for faster computation
+        with autocast():
+            outputs = model(samples)
+            loss = criterion(outputs, targets)
+        
+        # Scale gradients and perform backward pass
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
-
-        (acc1,) = accuracy(outputs, targets)
+        # Calculate accuracy
+        with torch.no_grad():
+            (acc1,) = accuracy(outputs, targets)
+            
         loss_meter.update(loss.item(), targets.size(0))
         acc1_meter.update(acc1.item(), targets.size(0))
         batch_time.update(time.time() - end)
@@ -178,11 +200,12 @@ def validate(config, data_loader, model):
         images = images.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
 
-        # compute output
-        output = model(images)
+        # compute output with mixed precision for efficiency
+        with autocast():
+            output = model(images)
+            loss = criterion(output, target)
 
         # measure accuracy and record loss
-        loss = criterion(output, target)
         (acc1,) = accuracy(output, target)
 
         loss_meter.update(loss.item(), target.size(0))

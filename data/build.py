@@ -46,12 +46,18 @@ def build_loader(config):
         dataset_train = Subset(dataset_train, indices)
         print(f"Using {subset_size} samples ({config.DATA.SUBSET_FRACTION:.2%} of original dataset) for training")
 
+    # Determine if we can use persistent workers (only supported in PyTorch 1.7.0+)
+    persistent_workers = config.DATA.NUM_WORKERS > 0
+    
     data_loader_train = DataLoader(
         dataset_train,
         batch_size=config.DATA.BATCH_SIZE,
         shuffle=True,
         num_workers=config.DATA.NUM_WORKERS,
         pin_memory=config.DATA.PIN_MEMORY,
+        drop_last=True,  # Drop last incomplete batch for consistent sizes
+        persistent_workers=persistent_workers,  # Keep workers alive between epochs
+        prefetch_factor=2 if config.DATA.NUM_WORKERS > 0 else None,  # Prefetch data
     )
 
     data_loader_val = DataLoader(
@@ -59,7 +65,10 @@ def build_loader(config):
         batch_size=config.DATA.BATCH_SIZE,
         shuffle=False,
         num_workers=config.DATA.NUM_WORKERS,
-        pin_memory=False,
+        pin_memory=config.DATA.PIN_MEMORY,
+        drop_last=False,
+        persistent_workers=persistent_workers,
+        prefetch_factor=2 if config.DATA.NUM_WORKERS > 0 else None,
     )
 
     data_loader_test = DataLoader(
@@ -67,7 +76,10 @@ def build_loader(config):
         batch_size=config.DATA.BATCH_SIZE,
         shuffle=False,
         num_workers=config.DATA.NUM_WORKERS,
-        pin_memory=False,
+        pin_memory=config.DATA.PIN_MEMORY,
+        drop_last=False,
+        persistent_workers=persistent_workers,
+        prefetch_factor=2 if config.DATA.NUM_WORKERS > 0 else None,
     )
 
     return dataset_train, dataset_val, dataset_test, data_loader_train, data_loader_val, data_loader_test

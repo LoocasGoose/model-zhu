@@ -1,1 +1,0 @@
-CUDA_VISIBLE_DEVICES=0 python main.py --cfg=configs/resnet/resnet18_cifar.yaml --batch-size 128 --opts TRAIN.EPOCHS 10 PRINT_FREQ 1
