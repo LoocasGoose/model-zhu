@@ -11,6 +11,7 @@ import logging
 from typing import Dict, Tuple, Optional, List, Any, Union
 from types import SimpleNamespace
 
+from PIL.Image import _initialized
 import h5py
 import numpy as np
 import torch
@@ -355,36 +356,36 @@ def train_model(args: Union[argparse.Namespace, SimpleNamespace]):
     
     logger.info(f"Dataset has {num_classes} classes")
     
-    # Initialize model based on model type
-    # if model_type == '121':
-    #     model = DenseNet121(
-    #         num_classes=num_classes,
-    #         small_inputs=True,
-    #         use_attention=attention,
-    #         activation=activation,
-    #         use_attention_pooling=attention_pooling,
-    #         stochastic_depth_prob=stochastic_depth
-    #     )
-    # elif model_type == '169':
-    #     model = DenseNet169(
-    #         num_classes=num_classes,
-    #         small_inputs=True,
-    #         use_attention=attention,
-    #         activation=activation,
-    #         use_attention_pooling=attention_pooling,
-    #         stochastic_depth_prob=stochastic_depth
-    #     )
-    # elif model_type == '201':
-    model = DenseNet201(
+    # initialized model based on model type
+    if model_type == '121':
+        model = DenseNet121(
             num_classes=num_classes,
             small_inputs=True,
             use_attention=attention,
             activation=activation,
             use_attention_pooling=attention_pooling,
             stochastic_depth_prob=stochastic_depth
-    )
-    # else:
-    #     raise ValueError(f"Invalid model type: {model_type}")
+        )
+    elif model_type == '169':
+        model = DenseNet169(
+            num_classes=num_classes,
+            small_inputs=True,
+            use_attention=attention,
+            activation=activation,
+            use_attention_pooling=attention_pooling,
+            stochastic_depth_prob=stochastic_depth
+        )
+    elif model_type == '201':
+        model = DenseNet201(
+            num_classes=num_classes,
+            small_inputs=True,
+            use_attention=attention,
+            activation=activation,
+            use_attention_pooling=attention_pooling,
+            stochastic_depth_prob=stochastic_depth
+        )
+    else:
+        raise ValueError(f"Invalid model type: {model_type}")
     
     model = model.to(device)
     
