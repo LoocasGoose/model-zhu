@@ -18,7 +18,6 @@ TRAIN:
   LR: 0.001
   OPTIMIZER:
     NAME: 'adamw'  # For compatibility with main.py
-  AMP_OPT_LEVEL: 'O1'  # Enable mixed precision training
 
 # Other Parameters
 SEED: 42
