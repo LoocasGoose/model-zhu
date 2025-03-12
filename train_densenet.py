@@ -50,16 +50,54 @@ class HDF5Dataset(Dataset):
         
         # Open the HDF5 file and get dataset sizes
         with h5py.File(self.h5_path, 'r') as h5_file:
-            # Check if 'images' exists and is a dataset
-            if 'images' not in h5_file:
-                raise ValueError("HDF5 file must contain an 'images' dataset")
+            # Print available keys in the HDF5 file for debugging
+            print(f"Available keys in HDF5 file: {list(h5_file.keys())}")
             
-            # Access as dataset and get shape safely
-            dataset = h5_file['images']
-            if isinstance(dataset, h5py.Dataset):
-                self.num_samples = dataset.shape[0]
-            else:
-                raise ValueError("'images' must be an HDF5 Dataset")
+            # Try to identify image and label datasets
+            self.images_key = None
+            self.labels_key = None
+            
+            # Look for common naming patterns
+            possible_image_keys = ['images', 'image', 'x', 'data', 'features']
+            possible_label_keys = ['labels', 'label', 'y', 'targets', 'classes']
+            
+            # Check for image dataset
+            for key in possible_image_keys:
+                if key in h5_file and isinstance(h5_file[key], h5py.Dataset):
+                    self.images_key = key
+                    break
+            
+            # Check for label dataset
+            for key in possible_label_keys:
+                if key in h5_file and isinstance(h5_file[key], h5py.Dataset):
+                    self.labels_key = key
+                    break
+            
+            # If not found, try to infer from available keys
+            if self.images_key is None or self.labels_key is None:
+                for key in h5_file.keys():
+                    if isinstance(h5_file[key], h5py.Dataset):
+                        # Get shape safely
+                        try:
+                            shape = h5_file[key].shape
+                            if len(shape) >= 3:  # Images typically have 3+ dimensions
+                                self.images_key = key
+                            elif len(shape) == 1 or len(shape) == 2:  # Labels typically have 1-2 dimensions
+                                self.labels_key = key
+                        except (AttributeError, TypeError):
+                            continue
+            
+            # Verify we found the datasets
+            if self.images_key is None:
+                raise ValueError(f"Could not find image dataset in HDF5 file. Available keys: {list(h5_file.keys())}")
+            if self.labels_key is None:
+                raise ValueError(f"Could not find label dataset in HDF5 file. Available keys: {list(h5_file.keys())}")
+            
+            print(f"Using '{self.images_key}' as image dataset and '{self.labels_key}' as label dataset")
+            
+            # Get number of samples
+            self.num_samples = h5_file[self.images_key].shape[0]
+            logger.info(f"Found {self.num_samples} samples in HDF5 file")
         
     def __len__(self) -> int:
         return self.num_samples
@@ -67,20 +105,14 @@ class HDF5Dataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
         # Open file in read mode (not keeping it open to avoid issues with multiple workers)
         with h5py.File(self.h5_path, 'r') as h5_file:
-            # Verify datasets exist
-            if 'images' not in h5_file or 'labels' not in h5_file:
-                raise ValueError("HDF5 file must contain both 'images' and 'labels' datasets")
+            # Get image and label using discovered keys
+            image = np.array(h5_file[self.images_key][idx])
+            label = np.array(h5_file[self.labels_key][idx])
             
-            # Access data safely
-            images_dataset = h5_file['images']
-            labels_dataset = h5_file['labels']
-            
-            if not isinstance(images_dataset, h5py.Dataset) or not isinstance(labels_dataset, h5py.Dataset):
-                raise ValueError("Both 'images' and 'labels' must be HDF5 Datasets")
-            
-            # Get the data as numpy arrays
-            image = np.array(images_dataset[idx])
-            label = int(np.array(labels_dataset[idx]).item())  # Ensure it's a Python int
+            # Convert label to integer
+            if isinstance(label, np.ndarray) and label.size == 1:
+                label = label.item()
+            label = int(label)
         
         # Convert image to float tensor
         image = torch.from_numpy(image).float()
