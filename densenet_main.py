@@ -42,6 +42,8 @@ def parse_args():
     parser.add_argument("--opts", nargs="+", help="Modify config options from command line")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--output", type=str, default="output/densenet", help="Output directory")
+    parser.add_argument("--subset", type=float, default=1.0, help="Fraction of training data to use (0.0-1.0). Use smaller values for faster experiments.")
+    parser.add_argument("--fast", action="store_true", help="Enable fast mode: 10% of data, 5 epochs, small batch size")
     return parser.parse_args()
 
 
@@ -186,12 +188,13 @@ def build_model(config: Dict[str, Any], device: torch.device) -> nn.Module:
     return model
 
 
-def build_dataloaders(config: Dict[str, Any]) -> Tuple:
+def build_dataloaders(config: Dict[str, Any], subset_ratio: float = 1.0) -> Tuple:
     """
     Build data loaders for training and validation.
     
     Args:
         config: Dictionary containing dataset configuration
+        subset_ratio: Fraction of training data to use (0.0-1.0)
     
     Returns:
         Tuple of train and validation data loaders
@@ -228,6 +231,22 @@ def build_dataloaders(config: Dict[str, Any]) -> Tuple:
         filepath=dataset_path,
         augment=False
     )
+    
+    # Create subset for faster training if requested
+    if subset_ratio < 1.0:
+        # Calculate subset size
+        train_size = int(len(dataset_train) * subset_ratio)
+        val_size = int(len(dataset_val) * subset_ratio)
+        
+        # Create random indices as lists
+        train_indices = torch.randperm(len(dataset_train))[:train_size].tolist()
+        val_indices = torch.randperm(len(dataset_val))[:val_size].tolist()
+        
+        # Create subset datasets
+        dataset_train = torch.utils.data.Subset(dataset_train, train_indices)
+        dataset_val = torch.utils.data.Subset(dataset_val, val_indices)
+        
+        logger.info(f"Using {subset_ratio:.1%} of data: {train_size} training samples, {val_size} validation samples")
     
     # Create dataloaders
     train_loader = torch.utils.data.DataLoader(
@@ -465,6 +484,21 @@ def main():
     args = parse_args()
     config = load_config(args.cfg, args.opts)
     
+    # Enable fast mode if requested
+    subset_ratio = args.subset
+    if args.fast:
+        # Override settings for fast experimentation
+        subset_ratio = 0.1  # Use 10% of the data
+        config.setdefault('TRAIN', {})['EPOCHS'] = 5  # Only 5 epochs
+        config.setdefault('DATA', {})['BATCH_SIZE'] = min(config.get('DATA', {}).get('BATCH_SIZE', 64), 16)  # Smaller batch size
+        config.setdefault('DATA', {})['NUM_WORKERS'] = min(config.get('DATA', {}).get('NUM_WORKERS', 4), 2)  # Fewer workers
+        if 'MODEL' in config:
+            config['MODEL']['TYPE'] = '121'  # Use smallest model
+            config['MODEL']['ATTENTION'] = 'none'  # No attention mechanisms
+        config.setdefault('SAVE_FREQ', 1)  # Save each epoch
+        
+        logger.info("FAST MODE ENABLED: Using 10% of data, 5 epochs, small batch size, and simplified model")
+    
     # Set random seed
     seed = args.seed
     torch.manual_seed(seed)
@@ -487,7 +521,7 @@ def main():
     model = build_model(config, device)
     
     # Build dataloaders
-    dataset_train, dataset_val, dataset_test, train_loader, val_loader, test_loader = build_dataloaders(config)
+    dataset_train, dataset_val, dataset_test, train_loader, val_loader, test_loader = build_dataloaders(config, subset_ratio)
     
     # Set up loss function
     criterion = nn.CrossEntropyLoss()

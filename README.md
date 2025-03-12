@@ -130,7 +130,7 @@ Epoch 20, Max accuracy: 82.44%: python main.py --cfg=configs/alexnet.yaml
 Epoch 20, Max accuracy: : L.DROP_RATE 0.4140757605926737
 CUDA_VISIBLE_DEVICES=5 python main.py --cfg=configs/alexnet.yaml --opts TRAIN.LR 0.004584093674528438 DATA.BATCH_SIZE 128 MODE
 
-CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --opts VARIATION 169 MODEL.ATTENTION cbam MODEL.ACTIVATION mish TRAIN.EPOCHS 20
+CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.25 --opts VARIATION 169 MODEL.ATTENTION cbam MODEL.ACTIVATION mish TRAIN.EPOCHS 20
 
 
 
@@ -163,10 +163,17 @@ The model is designed to work with the medium-imagenet dataset located at:
 To train a DenseNet model using the configuration system:
 
 ```bash
-python main.py --cfg configs/densenet.yaml
+# Full training (may take several hours per epoch)
+python densenet_main.py --cfg configs/densenet.yaml
+
+# Fast training for experimentation (uses 10% of data, 5 epochs)
+python densenet_main.py --cfg configs/densenet.yaml --fast
+
+# Custom subset (train on 25% of the data)
+python densenet_main.py --cfg configs/densenet.yaml --subset 0.25
 ```
 
-This command loads the configuration from the YAML file, sets up the model, and starts training.
+These commands load the configuration from the YAML file, set up the model, and start training. The progress bar will show you the progress of each epoch.
 
 ## Configuration Files
 
@@ -176,30 +183,66 @@ The configuration files are stored in the `configs/` directory and use YAML form
 
 ```yaml
 # Dataset Configuration
-data_path: '/honey/nmep/medium-imagenet-96.hdf5'
-val_split: 0.1
-num_workers: 4
+DATA:
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  IMG_SIZE: 64
+  BATCH_SIZE: 8
+  NUM_WORKERS: 2
+  PIN_MEMORY: true
 
-# Model Configuration
-model_type: 'densenet'
-model_size: '121'       # Options: 121, 169, 201
-attention: 'cbam'       # Options: se, cbam, none
-activation: 'mish'      # Options: swish, mish, relu
-attention_pooling: true
-stochastic_depth: 0.1
+MODEL:
+  NAME: 'densenet'
+  TYPE: '121'
+  ATTENTION: 'none'
+  ACTIVATION: 'relu'
+  ATTENTION_POOLING: false
+  STOCHASTIC_DEPTH: 0.0
 
-# Training Configuration
-batch_size: 64
-epochs: 100
-learning_rate: 0.001
-min_lr: 0.000001
-weight_decay: 0.0001
-scheduler: 'cosine'     # Options: cosine, plateau, none
-early_stopping_patience: 10
+TRAIN:
+  EPOCHS: 20
+  LR: 0.001
+  WEIGHT_DECAY: 0.0001
+  AMP_OPT_LEVEL: 'O1'  # Enable mixed precision training
+  OPTIMIZER:
+    NAME: 'adamw'
 
 # Other Parameters
-seed: 42
-checkpoint_dir: 'checkpoints'
-log_dir: 'logs'
-checkpoint_freq: 5
+SEED: 42
+OUTPUT: 'output/densenet'
+SAVE_FREQ: 5
+PRINT_FREQ: 100
 ```
+
+## Speeding Up Training
+
+If you need to iterate quickly, several options are available:
+
+1. **Fast Mode** - Use `--fast` to train on 10% of the data for 5 epochs:
+   ```bash
+   python densenet_main.py --cfg configs/densenet.yaml --fast
+   ```
+
+2. **Custom Data Subset** - Use `--subset` to specify a fraction of the data:
+   ```bash
+   python densenet_main.py --cfg configs/densenet.yaml --subset 0.25
+   ```
+
+3. **Reduced Model Complexity** - Reduce these settings in your config:
+   ```yaml
+   MODEL:
+     TYPE: '121'  # Smallest model
+     ATTENTION: 'none'  # No attention mechanisms
+   ```
+
+4. **Mixed Precision** - Enable AMP for faster training:
+   ```yaml
+   TRAIN:
+     AMP_OPT_LEVEL: 'O1'
+   ```
+
+5. **Memory Efficiency** - Lower these to save GPU memory:
+   ```yaml
+   DATA:
+     BATCH_SIZE: 8
+     IMG_SIZE: 64
+   ```
