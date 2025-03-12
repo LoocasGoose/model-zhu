@@ -14,6 +14,11 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from timm.utils.metrics import AverageMeter, accuracy
 from tqdm import tqdm
 import copy  # Added for deep copying config
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 from config import get_config
 from data import build_loader
@@ -45,20 +50,31 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs, subset_rat
     dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5)
     
     # Log the parameters for the current trial
-    print(f"Trial {trial.number}: Learning Rate: {lr}, Batch Size: {batch_size}, Dropout Rate: {dropout_rate}")
+    logger.info(f"Trial {trial.number}: Learning Rate: {lr}, Batch Size: {batch_size}, Dropout Rate: {dropout_rate}")
     
     try:
-        # Create a mutable copy of the config
-        mutable_config = config.clone()
-        mutable_config.defrost()
+        # Create a deep copy of the config (works with SimpleNamespace-like objects)
+        mutable_config = copy.deepcopy(config)
         
-        # Modify config for tuning
-        mutable_config.TRAIN.LR = lr
-        mutable_config.DATA.BATCH_SIZE = batch_size
-        mutable_config.MODEL.DROP_RATE = dropout_rate
-        mutable_config.freeze()
+        # Check if config has the defrost method (for some config objects)
+        if hasattr(mutable_config, 'defrost'):
+            mutable_config.defrost()
         
-        # Build model and proceed with training and validation...
+        # Modify config for tuning - safely set attributes
+        if hasattr(mutable_config, 'TRAIN') and hasattr(mutable_config.TRAIN, 'LR'):
+            mutable_config.TRAIN.LR = lr
+        
+        if hasattr(mutable_config, 'DATA') and hasattr(mutable_config.DATA, 'BATCH_SIZE'):
+            mutable_config.DATA.BATCH_SIZE = batch_size
+        
+        if hasattr(mutable_config, 'MODEL') and hasattr(mutable_config.MODEL, 'DROP_RATE'):
+            mutable_config.MODEL.DROP_RATE = dropout_rate
+        
+        # Freeze config if it has that method
+        if hasattr(mutable_config, 'freeze'):
+            mutable_config.freeze()
+        
+        # Build model
         model = build_model(mutable_config)
         
         # Use more training data for better representation
@@ -67,15 +83,13 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs, subset_rat
         subset_train = torch.utils.data.Subset(dataset_train, indices.tolist())
         
         # Use the full validation set for more accurate evaluation
-        # If it's too slow, you can still limit it with a reasonable number
-        val_size = len(dataset_val)  # Use full validation set
         subset_val = dataset_val
         
         # Train and validate the model with the mutable config
         best_acc = train_and_validate(model, subset_train, subset_val, tune_epochs, batch_size, patience, mutable_config)
         
         # Log the best accuracy for the current trial
-        print(f"Trial {trial.number} completed with best accuracy: {best_acc:.2f}%")
+        logger.info(f"Trial {trial.number} completed with best accuracy: {best_acc:.2f}%")
         
         # Clean up to free memory
         del model
@@ -84,20 +98,23 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs, subset_rat
         return best_acc
     
     except Exception as e:
-        print(f"Error in trial {trial.number}: {str(e)}")
+        logger.error(f"Error in trial {trial.number}: {str(e)}")
         torch.cuda.empty_cache()
         return float('-inf')  # Return worst possible score
 
-def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_size, patience=2, mutable_config=None):
-    print("Starting training and validation...")  # Debugging print
-    model = model.cuda()  # Ensure the model is on the GPU
+def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_size, patience=2, config=None):
+    logger.info("Starting training and validation...")
+    
+    # Move model to GPU if available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
     
     # Create data loaders with optimized parameters
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, 
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,  # Adjust based on your CPU cores
+        num_workers=4,
         pin_memory=True,
         drop_last=True
     )
@@ -114,83 +131,140 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_siz
     epochs_no_improve = 0
     best_acc = 0.0
     
-    # Check if mutable_config is provided
-    if mutable_config is None:
-        # Use a default optimizer and learning rate
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        lr_scheduler = CosineAnnealingLR(optimizer, T_max=tune_epochs, eta_min=1e-6)
-    else:
-        # Use the optimizer that matches the config's settings
-        if mutable_config.TRAIN.OPTIMIZER.NAME.lower() == 'adamw':
-            optimizer = torch.optim.AdamW(
-                model.parameters(), 
-                lr=mutable_config.TRAIN.LR,
-                weight_decay=mutable_config.TRAIN.OPTIMIZER.WEIGHT_DECAY,
-                betas=(0.9, 0.999)
-            )
-        elif mutable_config.TRAIN.OPTIMIZER.NAME.lower() == 'adam':
-            optimizer = torch.optim.Adam(
-                model.parameters(),
-                lr=mutable_config.TRAIN.LR
-            )
-        else:  # Default to SGD
-            optimizer = torch.optim.SGD(
-                model.parameters(),
-                lr=mutable_config.TRAIN.LR,
-                momentum=mutable_config.TRAIN.OPTIMIZER.MOMENTUM
-            )
+    # Setup optimizer and scheduler
+    # Default values
+    lr = 0.001
+    min_lr = 1e-6
+    weight_decay = 0.01
+    momentum = 0.9
+    betas = (0.9, 0.999)
+    
+    # Try to get values from config if available
+    if config is not None:
+        # Extract learning rate
+        if hasattr(config, 'TRAIN') and hasattr(config.TRAIN, 'LR'):
+            lr = config.TRAIN.LR
         
-        # Add a learning rate scheduler that matches main training
-        lr_scheduler = CosineAnnealingLR(
-            optimizer, 
-            T_max=tune_epochs,
-            eta_min=mutable_config.TRAIN.MIN_LR
+        # Extract min learning rate
+        if hasattr(config, 'TRAIN') and hasattr(config.TRAIN, 'MIN_LR'):
+            min_lr = config.TRAIN.MIN_LR
+            
+        # Get optimizer configuration if available
+        if hasattr(config, 'TRAIN') and hasattr(config.TRAIN, 'OPTIMIZER'):
+            optimizer_config = config.TRAIN.OPTIMIZER
+            
+            # Extract optimizer name with default
+            optimizer_name = 'sgd'
+            if hasattr(optimizer_config, 'NAME'):
+                optimizer_name = optimizer_config.NAME.lower()
+                
+            # Extract weight decay if available
+            if hasattr(optimizer_config, 'WEIGHT_DECAY'):
+                weight_decay = optimizer_config.WEIGHT_DECAY
+                
+            # Extract momentum if available
+            if hasattr(optimizer_config, 'MOMENTUM'):
+                momentum = optimizer_config.MOMENTUM
+                
+            # Extract betas if available
+            if hasattr(optimizer_config, 'BETAS'):
+                betas = optimizer_config.BETAS
+        else:
+            optimizer_name = 'sgd'  # Default
+    else:
+        optimizer_name = 'sgd'  # Default
+    
+    # Create optimizer based on name
+    if optimizer_name == 'adamw':
+        optimizer = torch.optim.AdamW(
+            model.parameters(), 
+            lr=lr,
+            weight_decay=weight_decay,
+            betas=betas
+        )
+    elif optimizer_name == 'adam':
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=lr
+        )
+    else:  # Default to SGD
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=lr,
+            momentum=momentum
         )
     
-    criterion = torch.nn.CrossEntropyLoss()  # Loss function
+    # Create learning rate scheduler
+    lr_scheduler = CosineAnnealingLR(
+        optimizer, 
+        T_max=tune_epochs,
+        eta_min=min_lr
+    )
     
+    # Define loss function
+    criterion = torch.nn.CrossEntropyLoss()
+    
+    # Training loop
     for epoch in range(tune_epochs):
-        print(f"Epoch {epoch + 1}/{tune_epochs}")  # Log current epoch
+        logger.info(f"Epoch {epoch + 1}/{tune_epochs}")
         model.train()
         
-        # Add progress bar for training
+        # Training with progress bar
+        train_loss = 0.0
         with tqdm(total=len(data_loader_train), desc="Training", unit="batch") as pbar:
-            for images, targets in data_loader_train:
-                images = images.cuda(non_blocking=True)
-                targets = targets.cuda(non_blocking=True)
+            for batch_idx, (images, targets) in enumerate(data_loader_train):
+                images = images.to(device, non_blocking=True)
+                targets = targets.to(device, non_blocking=True)
                 
-                optimizer.zero_grad(set_to_none=True)  # Faster than setting to zero
+                # Zero gradients
+                optimizer.zero_grad(set_to_none=True)
+                
+                # Forward pass
                 outputs = model(images)
                 loss = criterion(outputs, targets)
+                
+                # Backward pass and optimize
                 loss.backward()
                 optimizer.step()
                 
-                pbar.update(1)  # Update progress bar
-                pbar.set_postfix(loss=loss.item())  # Display current loss in the progress bar
+                # Update metrics
+                train_loss += loss.item()
+                
+                # Update progress bar
+                pbar.update(1)
+                pbar.set_postfix(loss=loss.item())
         
         # Update learning rate
         lr_scheduler.step()
         
-        # Validation loop with progress bar
+        # Validation
         model.eval()
+        val_loss = 0.0
         correct = 0
         total = 0
         
         with tqdm(total=len(data_loader_val), desc="Validation", unit="batch") as pbar:
             with torch.no_grad():
-                for images, targets in data_loader_val:
-                    images = images.cuda(non_blocking=True)
-                    targets = targets.cuda(non_blocking=True)
+                for batch_idx, (images, targets) in enumerate(data_loader_val):
+                    images = images.to(device, non_blocking=True)
+                    targets = targets.to(device, non_blocking=True)
                     
+                    # Forward pass
                     outputs = model(images)
-                    _, predicted = torch.max(outputs.data, 1)
-                    total += targets.size(0)
-                    correct += (predicted == targets).sum().item()
+                    loss = criterion(outputs, targets)
                     
-                    pbar.update(1)  # Update progress bar
-            
-        acc = 100 * correct / total
-        print(f"Validation Accuracy: {acc:.2f}%")  # Log validation accuracy for the epoch
+                    # Update metrics
+                    val_loss += loss.item()
+                    _, predicted = outputs.max(1)
+                    total += targets.size(0)
+                    correct += predicted.eq(targets).sum().item()
+                    
+                    # Update progress bar
+                    pbar.update(1)
+        
+        # Calculate accuracy
+        acc = 100.0 * correct / total
+        logger.info(f"Validation Accuracy: {acc:.2f}%")
         
         # Check for improvement
         if acc > best_acc:
@@ -201,13 +275,24 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_siz
             
         # Early stopping
         if epochs_no_improve >= patience:
-            print(f"Early stopping at epoch {epoch+1}")
+            logger.info(f"Early stopping at epoch {epoch+1}")
             break
     
     return best_acc
 
 def main():
     args, config = parse_option()
+    
+    # Log the tuning parameters
+    logger.info(f"Starting hyperparameter tuning for AlexNet with:")
+    logger.info(f"  - Config file: {args.cfg}")
+    logger.info(f"  - Number of trials: {args.n_trials}")
+    logger.info(f"  - Epochs per trial: {args.tune_epochs}")
+    logger.info(f"  - Parallel jobs: {args.n_jobs}")
+    logger.info(f"  - Data subset ratio: {args.subset_ratio}")
+    logger.info(f"  - Early stopping patience: {args.early_stop_patience}")
+    
+    # Build data loaders from config
     dataset_train, dataset_val, _, _, _, _ = build_loader(config)
     
     # Create output directory for results
@@ -222,9 +307,9 @@ def main():
         )
     )
     
-    print(f"Starting optimization with {args.n_trials} trials, {args.tune_epochs} epochs each...")
-    print(f"Using {args.subset_ratio*100:.1f}% of training data for faster tuning")
-    print(f"Running {args.n_jobs} trials in parallel!")
+    logger.info(f"Starting optimization with {args.n_trials} trials, {args.tune_epochs} epochs each...")
+    logger.info(f"Using {args.subset_ratio*100:.1f}% of training data for faster tuning")
+    logger.info(f"Running {args.n_jobs} trials in parallel!")
     
     study.optimize(
         lambda trial: objective(
@@ -241,16 +326,16 @@ def main():
     )
     
     # Print results
-    print("\n==== Study Results ====")
-    print(f"Number of finished trials: {len(study.trials)}")
+    logger.info("\n==== Study Results ====")
+    logger.info(f"Number of finished trials: {len(study.trials)}")
     
     if study.best_trial:
-        print("\nBest trial:")
+        logger.info("\nBest trial:")
         trial = study.best_trial
-        print(f"  Value: {trial.value:.2f}%")
-        print("  Params:")
+        logger.info(f"  Value: {trial.value:.2f}%")
+        logger.info("  Params:")
         for key, value in trial.params.items():
-            print(f"    {key}: {value}")
+            logger.info(f"    {key}: {value}")
         
         # Save best command for full training
         best_cmd = f"python main.py --cfg=configs/alexnet.yaml --opts"
@@ -259,11 +344,12 @@ def main():
         best_cmd += f" MODEL.DROP_RATE {trial.params['dropout_rate']}"
         best_cmd += f" TRAIN.EPOCHS 20"
         
-        print("\nRun this command with best parameters for full training:")
-        print(best_cmd)
+        logger.info("\nRun this command with best parameters for full training:")
+        logger.info(best_cmd)
         
         # Save results
-        with open(f"optuna_results/{args.study_name}_results.json", "w") as f:
+        result_file = f"optuna_results/{args.study_name}_results.json"
+        with open(result_file, "w") as f:
             json.dump({
                 "best_trial": {
                     "value": trial.value,
@@ -273,22 +359,24 @@ def main():
                 "all_trials": [
                     {
                         "trial_id": t.number,
-                        "value": t.value,
+                        "value": t.value if t.value is not None else float('nan'),
                         "params": t.params,
                         "state": str(t.state)
                     }
                     for t in study.trials
                 ]
             }, f, indent=2)
+        
+        logger.info(f"Results saved to {result_file}")
     else:
-        print("No successful trials completed")
+        logger.info("No successful trials completed")
     
     # Output the best parameters and accuracy
-    print("\nBest Parameters and Accuracy:")
+    logger.info("\nBest Parameters and Accuracy:")
     if study.best_trial:
-        print(f"Best Accuracy: {study.best_trial.value:.2f}%")
+        logger.info(f"Best Accuracy: {study.best_trial.value:.2f}%")
         for key, value in study.best_trial.params.items():
-            print(f"{key}: {value}")
+            logger.info(f"{key}: {value}")
 
 if __name__ == "__main__":
     main() 
