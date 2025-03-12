@@ -2,7 +2,7 @@
 hyperparameter_tune_alexnet.py
 Script for tuning hyperparameters specifically for AlexNet.
 
-CUDA_VISIBLE_DEVICES=5 python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 30 --tune-epochs 10 --n-jobs 10 --subset-ratio 0.25 --early-stop-patience 3 --study-name alexnet_tuning_improved
+CUDA_VISIBLE_DEVICES=5 python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 3 --tune-epochs 2 --n-jobs 1 --subset-ratio 0.05 --early-stop-patience 1 --study-name alexnet_tuning_test
 """
 
 import argparse

@@ -248,7 +248,9 @@ Linear with num_classes output units
 ## 4.1 How many parameters does AlexNet have? How does it compare to LeNet? With the same batch size, how much memory do LeNet and AlexNet take up while training? 
 > (hint: use `gpuststat`)
 
-`YOUR ANSWER HERE`
+lenet has around 60,000, alexnet has around 60,000,000. 
+lenet used 573MB, alexnet used 1.9GB.
+
 
 ## 4.2 Train AlexNet on CIFAR10. What accuracy do you get?
 
@@ -257,7 +259,14 @@ Report training and validation accuracy on AlexNet and LeNet. Report hyperparame
 > You can just copy the config file, don't need to write it all out again.
 > Also no need to tune the models much, you'll do it in the next part.
 
-`YOUR ANSWER HERE`
+[2025-03-12 07:34:06 alexnet](main.py 153): INFO Train: [12/50] lr 0.000259     time 0.0195 (0.0450)    loss 0.3942 (0.3810)  Acc@1 88.750 (86.768)    Mem 1586MB
+[2025-03-12 07:34:06 alexnet](main.py 162): INFO EPOCH 12 training takes 0:00:08
+[2025-03-12 07:34:06 alexnet](main.py 91): INFO  * Train Acc 86.768 Train Loss 0.381
+[2025-03-12 07:34:06 alexnet](main.py 92): INFO Accuracy of the network on the 50000 train images: 86.8%
+[2025-03-12 07:34:08 alexnet](main.py 195): INFO Validate:      Time 0.003 (0.040)      Loss 0.5816 (0.5875)    Acc@1 87.500 (80.550)  Mem 1586MB
+[2025-03-12 07:34:08 alexnet](main.py 96): INFO  * Val Acc 80.550 Val Loss 0.588
+[2025-03-12 07:34:08 alexnet](main.py 97): INFO Accuracy of the network on the 10000 val images: 80.5%
+[2025-03-12 07:34:08 alexnet](main.py 103): INFO Max accuracy: 80.55%
 
 
 
