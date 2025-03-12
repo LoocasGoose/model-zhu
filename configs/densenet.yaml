@@ -16,7 +16,6 @@ MODEL:
 TRAIN:
   EPOCHS: 100
   LR: 0.001
-  WEIGHT_DECAY: 0.0001
   OPTIMIZER:
     NAME: 'adamw'  # For compatibility with main.py
 
