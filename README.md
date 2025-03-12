@@ -22,8 +22,10 @@ git clone git@github.com:mlberkeley/fa24-nmep-hw2.git
 cd fa24-nmep-hw2
 conda env create -f env.yml
 conda activate vision-zoo
-$env:CUDA_VISIBLE_DEVICES=0
-python main.py --cfg=configs/lenet_base.yaml
+CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
+
+CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
+
 
 import torch
 print(f'CUDA available: {torch.cuda.is_available()}')
@@ -106,6 +108,8 @@ python main.py --cfg=configs/lenet_base.yaml --opts DATA.NUM_WORKERS 12 DATA.BAT
 16384*3 = 49152
 
 python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 32 TRAIN.LR 0.002640329447930566 TRAIN.OPTIMIZER.MOMENTUM 0.9858934559897461 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 32
+
+Trial 62 finished with value: 66.68 and parameters: {'learning_rate': 0.007735950805309332, 'momentum': 0.8569584037146034, 'batch_size': 32, 'activation': 'sigmoid', 'weight_decay': 2.5374310287615207e-10}. Best is trial 62 with value: 66.68.
 
 
 

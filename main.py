@@ -8,7 +8,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
-from timm.utils import AverageMeter, accuracy
+from timm.utils.metrics import AverageMeter, accuracy
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import Dataset  # For custom datasets
 from tqdm import tqdm
