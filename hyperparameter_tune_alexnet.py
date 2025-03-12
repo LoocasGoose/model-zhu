@@ -2,7 +2,7 @@
 hyperparameter_tune_alexnet.py
 Script for tuning hyperparameters specifically for AlexNet.
 
-CUDA_VISIBLE_DEVICES=5 python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 10 --tune-epochs 8 --n-jobs 4 --subset-ratio 0.1 --early-stop-patience 2 --study-name alexnet_tuning 
+CUDA_VISIBLE_DEVICES=5 python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 30 --tune-epochs 10 --n-jobs 10 --subset-ratio 0.25 --early-stop-patience 3 --study-name alexnet_tuning_improved
 """
 
 import argparse
@@ -61,18 +61,18 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs, subset_rat
         # Build model and proceed with training and validation...
         model = build_model(mutable_config)
         
-        # Subset the data for faster tuning
+        # Use more training data for better representation
         train_size = int(len(dataset_train) * subset_ratio)
         indices = torch.randperm(len(dataset_train))[:train_size]
         subset_train = torch.utils.data.Subset(dataset_train, indices.tolist())
         
-        # Subset validation data as well
-        val_size = min(len(dataset_val), 2000)  # Limit validation set to 2000 samples
-        val_indices = torch.randperm(len(dataset_val))[:val_size]
-        subset_val = torch.utils.data.Subset(dataset_val, val_indices.tolist())
+        # Use the full validation set for more accurate evaluation
+        # If it's too slow, you can still limit it with a reasonable number
+        val_size = len(dataset_val)  # Use full validation set
+        subset_val = dataset_val
         
-        # Train and validate the model
-        best_acc = train_and_validate(model, subset_train, subset_val, tune_epochs, batch_size, patience)
+        # Train and validate the model with the mutable config
+        best_acc = train_and_validate(model, subset_train, subset_val, tune_epochs, batch_size, patience, mutable_config)
         
         # Log the best accuracy for the current trial
         print(f"Trial {trial.number} completed with best accuracy: {best_acc:.2f}%")
@@ -88,7 +88,7 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs, subset_rat
         torch.cuda.empty_cache()
         return float('-inf')  # Return worst possible score
 
-def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_size, patience=2):
+def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_size, patience=2, mutable_config=None):
     print("Starting training and validation...")  # Debugging print
     model = model.cuda()  # Ensure the model is on the GPU
     
@@ -114,8 +114,40 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_siz
     epochs_no_improve = 0
     best_acc = 0.0
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)  # Example optimizer
-    criterion = torch.nn.CrossEntropyLoss()  # Example loss function
+    # Check if mutable_config is provided
+    if mutable_config is None:
+        # Use a default optimizer and learning rate
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        lr_scheduler = CosineAnnealingLR(optimizer, T_max=tune_epochs, eta_min=1e-6)
+    else:
+        # Use the optimizer that matches the config's settings
+        if mutable_config.TRAIN.OPTIMIZER.NAME.lower() == 'adamw':
+            optimizer = torch.optim.AdamW(
+                model.parameters(), 
+                lr=mutable_config.TRAIN.LR,
+                weight_decay=mutable_config.TRAIN.OPTIMIZER.WEIGHT_DECAY,
+                betas=(0.9, 0.999)
+            )
+        elif mutable_config.TRAIN.OPTIMIZER.NAME.lower() == 'adam':
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=mutable_config.TRAIN.LR
+            )
+        else:  # Default to SGD
+            optimizer = torch.optim.SGD(
+                model.parameters(),
+                lr=mutable_config.TRAIN.LR,
+                momentum=mutable_config.TRAIN.OPTIMIZER.MOMENTUM
+            )
+        
+        # Add a learning rate scheduler that matches main training
+        lr_scheduler = CosineAnnealingLR(
+            optimizer, 
+            T_max=tune_epochs,
+            eta_min=mutable_config.TRAIN.MIN_LR
+        )
+    
+    criterion = torch.nn.CrossEntropyLoss()  # Loss function
     
     for epoch in range(tune_epochs):
         print(f"Epoch {epoch + 1}/{tune_epochs}")  # Log current epoch
@@ -135,6 +167,9 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_siz
                 
                 pbar.update(1)  # Update progress bar
                 pbar.set_postfix(loss=loss.item())  # Display current loss in the progress bar
+        
+        # Update learning rate
+        lr_scheduler.step()
         
         # Validation loop with progress bar
         model.eval()
