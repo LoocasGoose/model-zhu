@@ -2,7 +2,8 @@ BASE: ['resnet18_base.yaml']
 DATA:
   BATCH_SIZE: 32
   DATASET: "medium_imagenet"
-  IMG_SIZE: 32
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  IMG_SIZE: 96
   NUM_WORKERS: 32
   PIN_MEMORY: True
 MODEL:

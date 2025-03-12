@@ -24,6 +24,7 @@ conda env create -f env.yml
 conda activate vision-zoo
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
+
 CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml
 
 import torch
@@ -130,7 +131,35 @@ Epoch 20, Max accuracy: 82.44%: python main.py --cfg=configs/alexnet.yaml
 Epoch 20, Max accuracy: : L.DROP_RATE 0.4140757605926737
 CUDA_VISIBLE_DEVICES=5 python main.py --cfg=configs/alexnet.yaml --opts TRAIN.LR 0.004584093674528438 DATA.BATCH_SIZE 128 MODE
 
-CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.25 --opts VARIATION 169 MODEL.ATTENTION cbam MODEL.ACTIVATION mish TRAIN.EPOCHS 20
+# least powerful
+CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.05 --opts VARIATION 121 MODEL.ATTENTION none MODEL.ACTIVATION relu DATA.BATCH_SIZE 4 DATA.IMG_SIZE 32 DATA.NUM_WORKERS 3 TRAIN.EPOCHS 5 TRAIN.AMP_OPT_LEVEL O1
+# medium
+CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.25 --opts VARIATION 169 MODEL.ATTENTION none MODEL.ACTIVATION mish TRAIN.EPOCHS 20 DATA.BATCH_SIZE = 8
+CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.25 --opts VARIATION 169 MODEL.ATTENTION cbam MODEL.ACTIVATION mish TRAIN.EPOCHS 20 DATA.BATCH_SIZE = 24
+# most powerful
+CUDA_VISIBLE_DEVICES=1 CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --opts VARIATION 201 MODEL.ATTENTION cbam MODEL.ACTIVATION mish MODEL.ATTENTION_POOLING true MODEL.STOCHASTIC_DEPTH 0.2 MODEL.DROP_RATE 0.3 DATA.IMG_SIZE 96 DATA.BATCH_SIZE 32 DATA.NUM_WORKERS 4 TRAIN.EPOCHS 100 TRAIN.LR 0.001 TRAIN.WEIGHT_DECAY 0.0001 TRAIN.AMP_OPT_LEVEL O1 TRAIN.OPTIMIZER.NAME adamw 
+
+# densenet testing
+CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.05 --opts VARIATION 121 MODEL.ATTENTION none MODEL.ACTIVATION relu DATA.BATCH_SIZE 256 DATA.IMG_SIZE 32 DATA.NUM_WORKERS 64 TRAIN.EPOCHS 10 TRAIN.AMP_OPT_LEVEL O1
+2025-03-12 19:06:23,940 - DenseNetTraining - INFO - Epoch 10/10 - Train Acc: 27.586, Train Loss: 3.1580, Val Acc: 11.802, Val Loss: 4.6880, Best Acc: 13.435, LR: 0.00000
+
+
+ CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.05 --opts VARIATION 121 MODEL.ATTENTION none MODEL.ACTIVATION relu DATA.BATCH_SIZE 128 DATA.IMG_SIZE 32 DATA.NUM_WORKERS 64 TRAIN.EPOCHS 20 TRAIN.AMP_OPT_LEVEL O1
+ 2025-03-12 19:21:30,769 - DenseNetTraining - INFO - Epoch 20/20 - Train Acc: 45.208, Train Loss: 2.2448, Val Acc: 21.286, Val Loss: 4.4313, Best Acc: 21.286, LR: 0.00000
+
+
+ CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.05 --opts VARIATION 121 MODEL.ATTENTION none MODEL.ACTIVATION relu DATA.BATCH_SIZE 64 DATA.IMG_SIZE 64 DATA.NUM_WORKERS 32 TRAIN.EPOCHS 20 TRAIN.AMP_OPT_LEVEL O1
+ 2025-03-12 20:37:34,234 - DenseNetTraining - INFO - Epoch 20/20 - Train Acc: 51.796, Train Loss: 1.9020, Val Acc: 28.477, Val Loss: 3.6560, Best Acc: 28.477, LR: 0.00000
+
+ CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --subset 0.25 --opts VARIATION 121 MODEL.ATTENTION se MODEL.ACTIVATION mish MODEL.DROP_RATE 0.4 TRAIN.WEIGHT_DECAY 0.0005 MODEL.STOCHASTIC_DEPTH 0.2 DATA.IMG_SIZE 64 DATA.BATCH_SIZE 36 TRAIN.LR 0.0004 TRAIN.SCHEDULER cosine TRAIN.EARLY_STOPPING_PATIENCE 10 TRAIN.EPOCHS 30 TRAIN.AMP_OPT_LEVEL O1
+2025-03-12 22:01:57,161 - DenseNetTraining - INFO - Epoch 6/15 - Train Acc: 28.819, Train Loss: 3.0626, Val Acc: 15.595, Val Loss: 5.1737, Best Acc: 15.595, LR: 0.000262
+
+# resnet
+CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/resnet18_medium_imagenet.yaml --opts MODEL.DROP_RATE 0.3 TRAIN.EPOCHS 20 TRAIN.LR 0.001 TRAIN.OPTIMIZER.NAME adamw TRAIN.WEIGHT_DECAY 0.0005 DATA.BATCH_SIZE 32
+
+
+
+
 
 
 
