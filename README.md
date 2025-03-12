@@ -26,6 +26,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/densenet.yaml
 
+
 import torch
 print(f'CUDA available: {torch.cuda.is_available()}')
 ```
@@ -131,15 +132,6 @@ Epoch 20, Max accuracy: : L.DROP_RATE 0.4140757605926737
 CUDA_VISIBLE_DEVICES=5 python main.py --cfg=configs/alexnet.yaml --opts TRAIN.LR 0.004584093674528438 DATA.BATCH_SIZE 128 MODE
 
 
-Went down a rabbit hole tuning hyperparameters for the past 5 hours or so - wrote a hyperparameter tuning script and tested ~60 different combinations (can be increased). From my testing, this is one of the best intialization for lenet_base.yaml:
-```
-python main.py --cfg=configs/lenet_base.yaml --opts DATA.BATCH_SIZE 64 TRAIN.LR 0.007568304298229739 TRAIN.OPTIMIZER.MOMENTUM 0.9540690887792035 MODEL.NUM_CLASSES 10 TRAIN.EPOCHS 20 DATA.NUM_WORKERS 6
-```
-Got 68% accuracy after 20 epochs (approaching the limit of 70% validation accuracy for a very basic lenet).
-
-I've attached the hyperparameter tuning script if you want to find the best hyperparameters for yourself. I used optuna hyperparameter optimization framework and Hyperband pruning to speed up the process. More details are in the script.
-
-(I crashed my computer 6+ times cuz memory allocation issues yippee)
 
 
 
