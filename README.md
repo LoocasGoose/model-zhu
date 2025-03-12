@@ -155,7 +155,7 @@ CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --sub
 2025-03-12 22:01:57,161 - DenseNetTraining - INFO - Epoch 6/15 - Train Acc: 28.819, Train Loss: 3.0626, Val Acc: 15.595, Val Loss: 5.1737, Best Acc: 15.595, LR: 0.000262
 
 # resnet
-CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/resnet18_medium_imagenet.yaml --opts MODEL.DROP_RATE 0.3 TRAIN.EPOCHS 20 TRAIN.LR 0.001 TRAIN.OPTIMIZER.NAME adamw DATA.BATCH_SIZE 32--subset-fraction 0.2 
+CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/resnet18_medium_imagenet.yaml --subset-fraction 0.2 --opts MODEL.DROP_RATE 0.3 TRAIN.EPOCHS 20 TRAIN.LR 0.001 TRAIN.OPTIMIZER.NAME adamw DATA.BATCH_SIZE 256
 
 
 
