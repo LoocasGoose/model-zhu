@@ -2,7 +2,7 @@
 hyperparameter_tune_alexnet.py
 Script for tuning hyperparameters specifically for AlexNet.
 
-python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 10 --tune-epochs 8 --study-name alexnet_tuning
+python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 10 --tune-epochs 8 --study-name alexnet_tuning --n-jobs 4
 """
 
 import argparse
@@ -13,6 +13,7 @@ import optuna
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from timm.utils.metrics import AverageMeter, accuracy
 from tqdm import tqdm
+import copy  # Added for deep copying config
 
 from config import get_config
 from data import build_loader
@@ -26,6 +27,7 @@ def parse_option():
     parser.add_argument("--n-trials", type=int, default=10, help="Number of trials for hyperparameter search")
     parser.add_argument("--tune-epochs", type=int, default=8, help="Number of epochs for each trial")
     parser.add_argument("--study-name", type=str, default="alexnet_tuning", help="Name of the study")
+    parser.add_argument("--n-jobs", type=int, default=4, help="Number of parallel jobs for trials")
     
     args, unparsed = parser.parse_known_args()
     config = get_config(args)
@@ -104,8 +106,29 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
     
     return best_acc
 
-if __name__ == "__main__":
+def main():
     args, config = parse_option()
     dataset_train, dataset_val, _, _, _, _ = build_loader(config)
-    study = optuna.create_study(direction="maximize")
-    study.optimize(lambda trial: objective(trial, config, dataset_train, dataset_val, args.tune_epochs), n_trials=args.n_trials) 
+    
+    # Create Optuna study with better pruning
+    study = optuna.create_study(
+        study_name=args.study_name,
+        direction="maximize",
+        pruner=optuna.pruners.HyperbandPruner(
+            min_resource=1, max_resource=args.tune_epochs, reduction_factor=3
+        )
+    )
+    
+    print(f"Starting optimization with {args.n_trials} trials, {args.tune_epochs} epochs each...")
+    print(f"Running {args.n_jobs} trials in parallel!")
+    
+    study.optimize(
+        lambda trial: objective(trial, config, dataset_train, dataset_val, args.tune_epochs),
+        n_trials=args.n_trials,
+        n_jobs=args.n_jobs  # Run multiple trials in parallel
+    )
+    
+    # ... existing result logging ...
+
+if __name__ == "__main__":
+    main() 
