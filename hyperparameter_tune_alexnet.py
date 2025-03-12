@@ -38,6 +38,9 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs):
     batch_size = trial.suggest_categorical("batch_size", [32, 64, 128, 256])
     dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5)
     
+    # Log the parameters for the current trial
+    print(f"Trial {trial.number}: Learning Rate: {lr}, Batch Size: {batch_size}, Dropout Rate: {dropout_rate}")
+    
     # Create a mutable copy of the config
     mutable_config = config.clone()
     mutable_config.defrost()
@@ -51,13 +54,16 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs):
     # Build model and proceed with training and validation...
     model = build_model(mutable_config)
     
-    # Assuming `best_acc` is the best accuracy achieved during training
-    best_acc = train_and_validate(model, dataset_train, dataset_val, tune_epochs)  # Replace with your training logic
+    # Train and validate the model
+    best_acc = train_and_validate(model, dataset_train, dataset_val, tune_epochs)
+    
+    # Log the best accuracy for the current trial
+    print(f"Trial {trial.number} completed with best accuracy: {best_acc:.2f}%")
     
     return best_acc  # Ensure this returns a float
 
 def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
-    # Move model to GPU
+    print("Starting training and validation...")  # Debugging print
     model = model.cuda()  # Ensure the model is on the GPU
     
     # Create data loaders
@@ -70,7 +76,7 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
     best_acc = 0.0
     
     for epoch in range(tune_epochs):
-        # Training loop
+        print(f"Epoch {epoch + 1}/{tune_epochs}")  # Log current epoch
         model.train()
         for images, targets in data_loader_train:
             images, targets = images.cuda(), targets.cuda()  # Ensure data is on the GPU
@@ -94,6 +100,7 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
         
         acc = 100 * correct / total
         best_acc = max(best_acc, acc)
+        print(f"Validation Accuracy: {acc:.2f}%")  # Log validation accuracy for the epoch
     
     return best_acc
 
