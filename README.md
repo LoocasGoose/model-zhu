@@ -24,8 +24,7 @@ conda env create -f env.yml
 conda activate vision-zoo
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
-CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/densenet.yaml
-
+CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml
 
 import torch
 print(f'CUDA available: {torch.cuda.is_available()}')
@@ -131,6 +130,7 @@ Epoch 20, Max accuracy: 82.44%: python main.py --cfg=configs/alexnet.yaml
 Epoch 20, Max accuracy: : L.DROP_RATE 0.4140757605926737
 CUDA_VISIBLE_DEVICES=5 python main.py --cfg=configs/alexnet.yaml --opts TRAIN.LR 0.004584093674528438 DATA.BATCH_SIZE 128 MODE
 
+CUDA_VISIBLE_DEVICES=1 python densenet_main.py --cfg configs/densenet.yaml --opts VARIATION 169 MODEL.ATTENTION cbam MODEL.ACTIVATION mish TRAIN.EPOCHS 20
 
 
 

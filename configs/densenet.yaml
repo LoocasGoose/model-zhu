@@ -4,18 +4,25 @@ DATA:
   # Dataset Configuration
   DATASET: 'medium_imagenet'  # Uses the existing MediumImagenetHDF5Dataset
   MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'  # Path to HDF5 file
-  IMG_SIZE: 96  
-  BATCH_SIZE: 32  # Significantly reduced batch size
-  NUM_WORKERS: 2
+  IMG_SIZE: 96  # Image size
+  BATCH_SIZE: 64
+  NUM_WORKERS: 4
   PIN_MEMORY: true
 
 MODEL:
   NAME: 'densenet'  # For identification in main.py
-  NUM_CLASSES: 200  # Set to 200 for medium_imagenet
+  TYPE: '121'       # Options: 121, 169, 201
+  ATTENTION: 'cbam'  # Options: se, cbam, none
+  ACTIVATION: 'mish'  # Options: swish, mish, relu
+  ATTENTION_POOLING: true
+  STOCHASTIC_DEPTH: 0.1
+  NUM_CLASSES: 1000  # Will be updated based on dataset
 
 TRAIN:
   EPOCHS: 100
   LR: 0.001
+  MIN_LR: 0.000001
+  WEIGHT_DECAY: 0.0001
   OPTIMIZER:
     NAME: 'adamw'  # For compatibility with main.py
 
@@ -23,4 +30,4 @@ TRAIN:
 SEED: 42
 OUTPUT: 'output/densenet'
 SAVE_FREQ: 5
-PRINT_FREQ: 100 
+PRINT_FREQ: 100
