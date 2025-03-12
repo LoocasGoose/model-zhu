@@ -1,29 +1,32 @@
 # DenseNet Training Configuration
 
-# Dataset Configuration
-# data_path is now hardcoded in the training script
-val_split: 0.1
-num_workers: 4
+DATA:
+  # Dataset Configuration
+  DATASET: 'medium_imagenet'  # Uses the existing MediumImagenetHDF5Dataset
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'  # Path to HDF5 file
+  IMG_SIZE: 96  # Image size
+  BATCH_SIZE: 64
+  NUM_WORKERS: 4
+  PIN_MEMORY: true
 
-# Model Configuration
-model_type: 'densenet'  # Used by main.py to identify the model type
-model_size: '121'       # Options: 121, 169, 201
-attention: 'cbam'       # Options: se, cbam, none
-activation: 'mish'      # Options: swish, mish, relu
-attention_pooling: true
-stochastic_depth: 0.1
+MODEL:
+  NAME: 'densenet'  # For identification in main.py
+  TYPE: '121'       # Options: 121, 169, 201
+  ATTENTION: 'cbam'  # Options: se, cbam, none
+  ACTIVATION: 'mish'  # Options: swish, mish, relu
+  ATTENTION_POOLING: true
+  STOCHASTIC_DEPTH: 0.1
+  NUM_CLASSES: 1000  # Will be updated based on dataset
 
-# Training Configuration
-batch_size: 64
-epochs: 100
-learning_rate: 0.001
-min_lr: 0.000001
-weight_decay: 0.0001
-scheduler: 'cosine'     # Options: cosine, plateau, none
-early_stopping_patience: 10
+TRAIN:
+  EPOCHS: 100
+  LR: 0.001
+  MIN_LR: 0.000001
+  WEIGHT_DECAY: 0.0001
+  OPTIMIZER:
+    NAME: 'adamw'  # For compatibility with main.py
 
 # Other Parameters
-seed: 42
-checkpoint_dir: 'checkpoints'
-log_dir: 'logs'
-checkpoint_freq: 5 
+SEED: 42
+OUTPUT: 'output/densenet'
+SAVE_FREQ: 5 

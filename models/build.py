@@ -15,36 +15,44 @@ def build_model(config):
         model = ResNet18(num_classes=config.MODEL.NUM_CLASSES)
     elif model_type == 'alexnet':
         model = AlexNet(num_classes=config.MODEL.NUM_CLASSES)
-    elif model_type == 'densenet121':
-        model = DenseNet121(
-            num_classes=config.MODEL.NUM_CLASSES, 
-            small_inputs=config.MODEL.get('SMALL_INPUTS', True),
-            use_attention=config.MODEL.get('ATTENTION', 'se'),
-            reduction_ratio=config.MODEL.get('REDUCTION_RATIO', 16),
-            dropout_rate=config.MODEL.get('DROP_RATE', 0.2),
-            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0),
-            activation=config.MODEL.get('ACTIVATION', 'swish')
-        )
-    elif model_type == 'densenet169':
-        model = DenseNet169(
-            num_classes=config.MODEL.NUM_CLASSES, 
-            small_inputs=config.MODEL.get('SMALL_INPUTS', True),
-            use_attention=config.MODEL.get('ATTENTION', 'se'),
-            reduction_ratio=config.MODEL.get('REDUCTION_RATIO', 16),
-            dropout_rate=config.MODEL.get('DROP_RATE', 0.2),
-            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0),
-            activation=config.MODEL.get('ACTIVATION', 'swish')
-        )
-    elif model_type == 'densenet201':
-        model = DenseNet201(
-            num_classes=config.MODEL.NUM_CLASSES, 
-            small_inputs=config.MODEL.get('SMALL_INPUTS', True),
-            use_attention=config.MODEL.get('ATTENTION', 'se'),
-            reduction_ratio=config.MODEL.get('REDUCTION_RATIO', 16),
-            dropout_rate=config.MODEL.get('DROP_RATE', 0.2),
-            stochastic_depth_prob=config.MODEL.get('STOCHASTIC_DEPTH_PROB', 0.0),
-            activation=config.MODEL.get('ACTIVATION', 'swish')
-        )
+    elif model_type == 'densenet':
+        # Get the densenet type
+        densenet_type = config.MODEL.get('TYPE', '121')
+        attention = config.MODEL.get('ATTENTION', 'se')
+        activation = config.MODEL.get('ACTIVATION', 'swish')
+        attention_pooling = config.MODEL.get('ATTENTION_POOLING', False)
+        stochastic_depth = config.MODEL.get('STOCHASTIC_DEPTH', 0.0)
+        
+        # Select the appropriate DenseNet model based on type
+        if densenet_type == '121':
+            model = DenseNet121(
+                num_classes=config.MODEL.NUM_CLASSES,
+                small_inputs=True,
+                use_attention=attention,
+                activation=activation,
+                use_attention_pooling=attention_pooling,
+                stochastic_depth_prob=stochastic_depth
+            )
+        elif densenet_type == '169':
+            model = DenseNet169(
+                num_classes=config.MODEL.NUM_CLASSES,
+                small_inputs=True,
+                use_attention=attention,
+                activation=activation,
+                use_attention_pooling=attention_pooling,
+                stochastic_depth_prob=stochastic_depth
+            )
+        elif densenet_type == '201':
+            model = DenseNet201(
+                num_classes=config.MODEL.NUM_CLASSES,
+                small_inputs=True,
+                use_attention=attention,
+                activation=activation,
+                use_attention_pooling=attention_pooling,
+                stochastic_depth_prob=stochastic_depth
+            )
+        else:
+            raise ValueError(f"Invalid densenet type: {densenet_type}")
     # elif model_type == 'resnet34':
     #     model = ResNet34(num_classes=config.MODEL.NUM_CLASSES)
     # elif model_type == 'resnet50':
