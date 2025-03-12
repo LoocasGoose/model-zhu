@@ -31,9 +31,19 @@ def load_checkpoint(config, model, optimizer, lr_scheduler, logger):
     return max_accuracy
 
 
-def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger):
+def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger, is_best=False):
     """
-    Saves checkpoint as best model.
+    Saves checkpoint of the model.
+    
+    Args:
+        config: Configuration object
+        epoch: Current epoch
+        model: Model to save
+        max_accuracy: Best accuracy achieved so far
+        optimizer: Optimizer state
+        lr_scheduler: Learning rate scheduler state
+        logger: Logger for output
+        is_best: Whether this checkpoint is the best so far
     """
     save_state = {
         "model": model.state_dict(),
@@ -44,7 +54,13 @@ def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler,
         "config": config,
     }
 
-    save_path = os.path.join(config.OUTPUT, "ckpt_best.pth")
-    logger.info(f"{save_path} saving......")
-    torch.save(save_state, save_path)
-    logger.info(f"{save_path} saved !!!")
+    if is_best:
+        save_path = os.path.join(config.OUTPUT, "ckpt_best.pth")
+        logger.info(f"{save_path} saving (best model)......")
+        torch.save(save_state, save_path)
+        logger.info(f"{save_path} saved !!!")
+    else:
+        save_path = os.path.join(config.OUTPUT, f"ckpt_epoch_{epoch}.pth")
+        logger.info(f"{save_path} saving......")
+        torch.save(save_state, save_path)
+        logger.info(f"{save_path} saved !!!")

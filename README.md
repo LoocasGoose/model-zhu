@@ -24,8 +24,7 @@ conda env create -f env.yml
 conda activate vision-zoo
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
-
-
+CUDA_VISIBLE_DEVICES=1 python main.py --cfg configs/densenet.yaml
 
 import torch
 print(f'CUDA available: {torch.cuda.is_available()}')
@@ -141,6 +140,192 @@ Got 68% accuracy after 20 epochs (approaching the limit of 70% validation accura
 I've attached the hyperparameter tuning script if you want to find the best hyperparameters for yourself. I used optuna hyperparameter optimization framework and Hyperband pruning to speed up the process. More details are in the script.
 
 (I crashed my computer 6+ times cuz memory allocation issues yippee)
+
+
+
+
+
+# DenseNet with Attention Mechanisms
+
+This repository contains an implementation of DenseNet with various attention mechanisms and training utilities.
+
+## Model Features
+
+The DenseNet implementation includes:
+
+- Multiple model configurations (DenseNet-121, DenseNet-169, DenseNet-201)
+- Attention mechanisms (SE, CBAM)
+- Advanced activation functions (Swish, Mish)
+- Stochastic depth for improved regularization
+- Attention pooling options
+
+## Dataset
+
+The model is designed to work with the medium-imagenet dataset located at:
+```
+/honey/nmep/medium-imagenet-96.hdf5
+```
+
+## Quick Start
+
+To train a DenseNet model using the configuration system:
+
+```bash
+python main.py --cfg configs/densenet.yaml
+```
+
+This command loads the configuration from the YAML file, sets up the model, and starts training.
+
+## Configuration Files
+
+The configuration files are stored in the `configs/` directory and use YAML format. You can create different configuration files for different experiments.
+
+### Example Configuration
+
+```yaml
+# Dataset Configuration
+data_path: '/honey/nmep/medium-imagenet-96.hdf5'
+val_split: 0.1
+num_workers: 4
+
+# Model Configuration
+model_type: 'densenet'
+model_size: '121'       # Options: 121, 169, 201
+attention: 'cbam'       # Options: se, cbam, none
+activation: 'mish'      # Options: swish, mish, relu
+attention_pooling: true
+stochastic_depth: 0.1
+
+# Training Configuration
+batch_size: 64
+epochs: 100
+learning_rate: 0.001
+min_lr: 0.000001
+weight_decay: 0.0001
+scheduler: 'cosine'     # Options: cosine, plateau, none
+early_stopping_patience: 10
+
+# Other Parameters
+seed: 42
+checkpoint_dir: 'checkpoints'
+log_dir: 'logs'
+checkpoint_freq: 5
+```
+
+## Customizing Configurations
+
+You can create your own configuration files by copying and modifying the example above. Here are the key parameters you can adjust:
+
+### Dataset Parameters
+
+- `data_path`: Path to the HDF5 dataset file
+- `val_split`: Proportion of data to use for validation (0.0 to 1.0)
+- `num_workers`: Number of data loading workers
+
+### Model Parameters
+
+- `model_type`: Always set to 'densenet' for DenseNet models
+- `model_size`: DenseNet architecture size (121, 169, or 201)
+- `attention`: Attention mechanism (se, cbam, none)
+- `activation`: Activation function (swish, mish, relu)
+- `attention_pooling`: Whether to use attention pooling (true/false)
+- `stochastic_depth`: Stochastic depth probability (0.0 to 1.0)
+
+### Training Parameters
+
+- `batch_size`: Batch size for training
+- `epochs`: Maximum number of training epochs
+- `learning_rate`: Initial learning rate
+- `min_lr`: Minimum learning rate (for schedulers)
+- `weight_decay`: Weight decay (L2 penalty)
+- `scheduler`: Learning rate scheduler (cosine, plateau, none)
+- `early_stopping_patience`: Number of epochs to wait before early stopping
+
+## Recommended Configurations
+
+Here are some recommended configurations for different scenarios:
+
+### For Maximum Accuracy
+
+```yaml
+model_size: '169'
+attention: 'cbam'
+activation: 'mish'
+attention_pooling: true
+batch_size: 32
+epochs: 200
+```
+
+### For Balanced Accuracy/Speed
+
+```yaml
+model_size: '121'
+attention: 'se'
+activation: 'swish'
+attention_pooling: false
+batch_size: 96
+```
+
+### For Maximum Speed
+
+```yaml
+model_size: '121'
+attention: 'none'
+activation: 'relu'
+attention_pooling: false
+batch_size: 128
+stochastic_depth: 0.0
+```
+
+## Advanced Training Features
+
+The training script includes several advanced features:
+
+- **Early Stopping**: Automatically stops training when validation metrics plateau
+- **Mixed Precision Training**: Uses PyTorch AMP for faster training and reduced memory usage
+- **Learning Rate Scheduling**: Implements cosine annealing and ReduceLROnPlateau
+- **Stochastic Depth**: Randomly drops layers during training for better generalization
+- **Checkpoint Management**: Saves the best model and periodic checkpoints
+
+## Using Checkpoints
+
+Model checkpoints are saved to the `checkpoints/` directory:
+- Best model: `densenet_{model_size}_best.pth`
+- Regular checkpoints: `densenet_{model_size}_epoch_{epoch}.pth`
+
+To load a checkpoint for inference or continued training:
+
+```python
+import torch
+from models.densenet import DenseNet121
+
+# Load checkpoint
+checkpoint = torch.load('checkpoints/densenet_121_best.pth')
+
+# Create model with the same configuration
+model = DenseNet121(
+    num_classes=1000,  # Match the number of classes in your dataset
+    use_attention="cbam",
+    activation="mish",
+    use_attention_pooling=True,
+    stochastic_depth_prob=0.1
+)
+
+# Load the state dict
+model.load_state_dict(checkpoint['model_state_dict'])
+
+# For inference mode
+model.eval()
+```
+
+## Directory Structure
+
+- `models/densenet.py`: DenseNet model implementation with attention mechanisms
+- `train_densenet.py`: Training script with advanced training techniques
+- `main.py`: Main script that loads configuration and starts training
+- `configs/densenet.yaml`: Configuration file for DenseNet training
+- `checkpoints/`: Directory for saving model checkpoints
+- `logs/`: Directory for saving training logs
 
 
 

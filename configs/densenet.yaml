@@ -1,0 +1,29 @@
+# DenseNet Training Configuration
+
+# Dataset Configuration
+data_path: '/honey/nmep/medium-imagenet-96.hdf5'
+val_split: 0.1
+num_workers: 4
+
+# Model Configuration
+model_type: 'densenet'  # Used by main.py to identify the model type
+model_size: '121'       # Options: 121, 169, 201
+attention: 'cbam'       # Options: se, cbam, none
+activation: 'mish'      # Options: swish, mish, relu
+attention_pooling: true
+stochastic_depth: 0.1
+
+# Training Configuration
+batch_size: 64
+epochs: 100
+learning_rate: 0.001
+min_lr: 0.000001
+weight_decay: 0.0001
+scheduler: 'cosine'     # Options: cosine, plateau, none
+early_stopping_patience: 10
+
+# Other Parameters
+seed: 42
+checkpoint_dir: 'checkpoints'
+log_dir: 'logs'
+checkpoint_freq: 5 
