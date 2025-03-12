@@ -6,7 +6,7 @@ DATA:
   MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'  # Path to HDF5 file
   IMG_SIZE: 96  
   BATCH_SIZE: 48  # Significantly reduced batch size
-  NUM_WORKERS: 6
+  NUM_WORKERS: 4
   PIN_MEMORY: true
 
 MODEL:
