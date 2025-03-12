@@ -2,7 +2,7 @@
 hyperparameter_tune_alexnet.py
 Script for tuning hyperparameters specifically for AlexNet.
 
-python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 10 --tune-epochs 8 --study-name alexnet_tuning --n-jobs 4
+CUDA_VISIBLE_DEVICES=5 python hyperparameter_tune_alexnet.py --cfg=configs/alexnet.yaml --n-trials 10 --tune-epochs 8 --study-name alexnet_tuning --n-jobs 4
 """
 
 import argparse
@@ -80,26 +80,36 @@ def train_and_validate(model, dataset_train, dataset_val, tune_epochs):
     for epoch in range(tune_epochs):
         print(f"Epoch {epoch + 1}/{tune_epochs}")  # Log current epoch
         model.train()
-        for images, targets in data_loader_train:
-            images, targets = images.cuda(), targets.cuda()  # Ensure data is on the GPU
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
         
-        # Validation loop
+        # Add progress bar for training
+        with tqdm(total=len(data_loader_train), desc="Training", unit="batch") as pbar:
+            for images, targets in data_loader_train:
+                images, targets = images.cuda(), targets.cuda()  # Ensure data is on the GPU
+                optimizer.zero_grad()
+                outputs = model(images)
+                loss = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
+                
+                pbar.update(1)  # Update progress bar
+                pbar.set_postfix(loss=loss.item())  # Display current loss in the progress bar
+        
+        # Validation loop with progress bar
         model.eval()
         correct = 0
         total = 0
-        with torch.no_grad():
-            for images, targets in data_loader_val:
-                images, targets = images.cuda(), targets.cuda()  # Ensure data is on the GPU
-                outputs = model(images)
-                _, predicted = torch.max(outputs.data, 1)
-                total += targets.size(0)
-                correct += (predicted == targets).sum().item()
         
+        with tqdm(total=len(data_loader_val), desc="Validation", unit="batch") as pbar:
+            with torch.no_grad():
+                for images, targets in data_loader_val:
+                    images, targets = images.cuda(), targets.cuda()  # Ensure data is on the GPU
+                    outputs = model(images)
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += targets.size(0)
+                    correct += (predicted == targets).sum().item()
+                    
+                    pbar.update(1)  # Update progress bar
+            
         acc = 100 * correct / total
         best_acc = max(best_acc, acc)
         print(f"Validation Accuracy: {acc:.2f}%")  # Log validation accuracy for the epoch
