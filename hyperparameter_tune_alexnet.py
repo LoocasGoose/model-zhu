@@ -105,6 +105,7 @@ def objective(trial, config, dataset_train, dataset_val, tune_epochs, subset_rat
 def train_and_validate(model, dataset_train, dataset_val, tune_epochs, batch_size, patience=2, config=None):
     logger.info("Starting training and validation...")
     
+    
     # Move model to GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)

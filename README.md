@@ -26,6 +26,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
 
 
+
 import torch
 print(f'CUDA available: {torch.cuda.is_available()}')
 ```

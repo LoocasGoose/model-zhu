@@ -18,6 +18,7 @@ python hyperparameter_tune_medium.py --cfg=configs/lenet_base.yaml --n-trials 30
 Upon finishing training, the script will print the best hyperparameters and the command to 
 run to train the model with the best hyperparameters.
 
+
 pip dependencies: optuna
 """
 
