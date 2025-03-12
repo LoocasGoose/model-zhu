@@ -37,6 +37,7 @@ def parse_option():
         metavar="PATH",
         help="root of output folder, the full path is <output>/<model_name>/<tag> (default: output)",
     )
+    parser.add_argument("--subset-fraction", type=float, help="fraction of training data to use (0.1 means use 10%)")
     parser.add_argument("--eval", action="store_true", help="Perform evaluation only")
     parser.add_argument("--throughput", action="store_true", help="Test throughput only")
 

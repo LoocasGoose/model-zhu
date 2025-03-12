@@ -1,2 +1,2 @@
 from .build import build_model
-from .densenet import DenseNet121, DenseNet169, DenseNet201
+from ..archive.densenet import DenseNet121, DenseNet169, DenseNet201

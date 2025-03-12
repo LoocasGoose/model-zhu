@@ -2,4 +2,7 @@ results
 checkpoints
 *pycache*
 output
-
+densenet_main.py
+train_densenet.py
+models/densenet.py
+configs/densenet.yaml

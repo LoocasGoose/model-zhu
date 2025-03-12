@@ -37,6 +37,8 @@ base_config.DATA.INTERPOLATION = "bicubic"
 base_config.DATA.PIN_MEMORY = True
 # Number of data loading threads
 base_config.DATA.NUM_WORKERS = 8
+# Fraction of training data to use (1.0 means use all data, 0.1 means use 10% of the data)
+base_config.DATA.SUBSET_FRACTION = 1.0
 
 # -----------------------------------------------------------------------------
 # Model settings
@@ -159,6 +161,8 @@ def update_config(config, args):
         config.OUTPUT = args.output
     if _check_args("eval"):
         config.EVAL_MODE = True
+    if _check_args("subset_fraction"):
+        config.DATA.SUBSET_FRACTION = args.subset_fraction
 
     # output folder
     config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME)
