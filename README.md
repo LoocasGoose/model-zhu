@@ -23,7 +23,6 @@ cd fa24-nmep-hw2
 conda env create -f env.yml
 conda activate vision-zoo
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/lenet_base.yaml
-
 CUDA_VISIBLE_DEVICES=1 python main.py --cfg=configs/alexnet.yaml
 
 
