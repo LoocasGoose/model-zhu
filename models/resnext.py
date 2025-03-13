@@ -25,27 +25,34 @@ class ResNeXtBlock(nn.Module):
             out_channels: Number of output channels
             stride: Stride for the first conv layer
             cardinality: Number of transformation groups (cardinality dimension)
-            base_width: Base width for each group, controlling the bottleneck width
+            base_width: Base width per group, controlling the bottleneck width
             pruning_rate: Channel pruning rate (1.0 means no pruning)
             activation: Activation function to use ('relu', 'relu6', or 'silu')
             drop_rate: Dropout rate
         """
         super(ResNeXtBlock, self).__init__()
         
-        # Calculate width for each group using cardinality and base_width with pruning
-        width = int(cardinality * base_width * pruning_rate)
+        # Calculate bottleneck width using standard reduction approach (similar to ResNet)
+        # Standard bottleneck reduction factor
+        reduction = 4
+        # Calculate width based on input channels with bottleneck reduction
+        bottleneck_width = int((in_channels // reduction) * cardinality * base_width / cardinality)
+        bottleneck_width = int(bottleneck_width * pruning_rate)
+        # Ensure width is a multiple of cardinality for efficient group distribution
+        bottleneck_width = max((bottleneck_width // cardinality) * cardinality, cardinality)
         
-        # First, bottleneck down to 'width' channels using 1x1 conv
-        self.conv1 = nn.Conv2d(in_channels, width, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn1 = nn.BatchNorm2d(width)
+        # First, bottleneck down to bottleneck_width channels using 1x1 conv
+        self.conv1 = nn.Conv2d(in_channels, bottleneck_width, kernel_size=1, stride=1, padding=0, bias=False)
+        self.bn1 = nn.BatchNorm2d(bottleneck_width)
         
         # Split-transform using grouped convolutions
-        self.conv2 = nn.Conv2d(width, width, kernel_size=3, stride=stride, padding=1, 
+        # Use stride here for efficiency (replaces max pooling with strided conv)
+        self.conv2 = nn.Conv2d(bottleneck_width, bottleneck_width, kernel_size=3, stride=stride, padding=1, 
                                groups=cardinality, bias=False)
-        self.bn2 = nn.BatchNorm2d(width)
+        self.bn2 = nn.BatchNorm2d(bottleneck_width)
         
         # Bottleneck up to out_channels using 1x1 conv
-        self.conv3 = nn.Conv2d(width, out_channels, kernel_size=1, stride=1, padding=0, bias=False)
+        self.conv3 = nn.Conv2d(bottleneck_width, out_channels, kernel_size=1, stride=1, padding=0, bias=False)
         self.bn3 = nn.BatchNorm2d(out_channels)
         
         # Select activation function based on parameter
@@ -65,8 +72,11 @@ class ResNeXtBlock(nn.Module):
         else:
             self.shortcut = nn.Identity()
         
-        # Add dropout layer after final activation
+        # Add dropout layer
         self.dropout = Dropout2d(p=drop_rate) if drop_rate > 0 else nn.Identity()
+        
+        # Store cardinality for scaling in forward pass
+        self.cardinality = cardinality
 
     def forward(self, x):
         """
@@ -88,18 +98,18 @@ class ResNeXtBlock(nn.Module):
         # Split-transform with grouped convolutions
         out = self.conv2(out)
         out = self.bn2(out)
-        out = self.relu(out)
+        # No ReLU here - removed to improve gradient flow per standard ResNet/ResNeXt architecture
         
         # Bottleneck up
         out = self.conv3(out)
         out = self.bn3(out)
         
+        # Apply dropout BEFORE residual addition
+        out = self.dropout(out)
+        
         # Add residual connection and apply ReLU
         out += identity
         out = self.relu(out)
-        
-        # Add dropout after activation
-        out = self.dropout(out)
         
         return out
 
@@ -109,7 +119,7 @@ class ResNeXt(nn.Module):
     ResNeXt model with configurable depth, based on the original paper.
     """
     def __init__(self, block, num_blocks, cardinality=32, base_width=4, pruning_rate=1.0, 
-                 num_classes=200, activation='relu', use_checkpoint=False, layer_drop_rate=0.0):
+                 num_classes=200, activation='relu', use_checkpoint=False, drop_rate=0.0, small_input=False):
         """
         Initialize ResNeXt model.
         
@@ -121,8 +131,9 @@ class ResNeXt(nn.Module):
             pruning_rate: Channel pruning rate (1.0 means no pruning)
             num_classes: Number of output classes
             activation: Activation function to use ('relu', 'relu6', or 'silu')
-            use_checkpoint: Whether to use gradient checkpointing for memory efficiency
-            layer_drop_rate: Layer dropout rate
+            use_checkpoint: Whether to use checkpoint for memory efficiency
+            drop_rate: Feature dropout rate within blocks
+            small_input: Whether using small input images (e.g., CIFAR)
         """
         super(ResNeXt, self).__init__()
         self.cardinality = cardinality
@@ -131,11 +142,20 @@ class ResNeXt(nn.Module):
         self.in_channels = 64
         self.activation = activation
         self.use_checkpoint = use_checkpoint
-        self.layer_drop_rate = layer_drop_rate
+        self.drop_rate = drop_rate
+        self.small_input = small_input
         
-        # Initial convolution layer
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
+        # Initial convolution layer - different for small inputs vs ImageNet-scale
+        if small_input:
+            # Small input (e.g., CIFAR) - use 3x3 conv without pooling
+            self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            self.bn1 = nn.BatchNorm2d(64)
+            self.maxpool = nn.Identity()  # No pooling for small inputs
+        else:
+            # ImageNet-scale input - use 7x7 conv with pooling (original paper)
+            self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            self.bn1 = nn.BatchNorm2d(64)
+            self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         
         # Select activation function based on parameter
         if activation == 'relu6':
@@ -183,7 +203,8 @@ class ResNeXt(nn.Module):
                     self.cardinality, 
                     self.base_width,
                     self.pruning_rate,
-                    self.activation
+                    self.activation,
+                    self.drop_rate  # Use the model's drop_rate instead of hardcoding 0.0
                 )
             )
             self.in_channels = out_channels
@@ -209,15 +230,17 @@ class ResNeXt(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+        x = self.maxpool(x)  # Apply max pooling if not small_input
         
-        # ResNeXt layers
-        if self.training and self.layer_drop_rate > 0:
-            for layer in [self.layer1, self.layer2, self.layer3, self.layer4]:
-                if torch.rand(1) < self.layer_drop_rate:
-                    x = checkpoint(layer, x) if self.use_checkpoint else layer(x)
-                else:
-                    x = x  # Skip layer
+        # Handle checkpointing if enabled during training
+        if self.use_checkpoint and self.training:
+            # Only apply checkpointing to deeper layers during training for memory efficiency
+            x = self.layer1(x)  # First layer is shallow, no checkpoint needed
+            x = checkpoint(self.layer2, x)
+            x = checkpoint(self.layer3, x)
+            x = checkpoint(self.layer4, x)
         else:
+            # Standard forward pass through all layers (more reliable for accuracy)
             x = self.layer1(x)
             x = self.layer2(x)
             x = self.layer3(x)
@@ -245,7 +268,7 @@ class ResNeXt(nn.Module):
 
 # Factory functions for different ResNeXt configurations
 
-def ResNeXt50(num_classes=200, cardinality=32, base_width=4, pruning_rate=1.0, activation='relu', use_checkpoint=False):
+def ResNeXt50(num_classes=200, cardinality=32, base_width=4, pruning_rate=1.0, activation='relu', use_checkpoint=False, drop_rate=0.0, small_input=False):
     """
     ResNeXt-50 model with 32x4d configuration (32 groups, 4 channels per group).
     
@@ -256,15 +279,18 @@ def ResNeXt50(num_classes=200, cardinality=32, base_width=4, pruning_rate=1.0, a
         pruning_rate: Channel pruning rate (1.0 means no pruning)
         activation: Activation function to use
         use_checkpoint: Whether to use checkpoint for memory efficiency
+        drop_rate: Feature dropout rate within blocks
+        small_input: Whether input images are small (CIFAR) or large (ImageNet)
         
     Returns:
         ResNeXt-50 model
     """
     return ResNeXt(ResNeXtBlock, [3, 4, 6, 3], cardinality, base_width, 
-                   pruning_rate, num_classes, activation, use_checkpoint)
+                   pruning_rate, num_classes, activation, use_checkpoint, 
+                   drop_rate, small_input)
 
 
-def ResNeXt101(num_classes=200, cardinality=32, base_width=4, pruning_rate=1.0, activation='relu', use_checkpoint=False):
+def ResNeXt101(num_classes=200, cardinality=32, base_width=4, pruning_rate=1.0, activation='relu', use_checkpoint=False, drop_rate=0.0, small_input=False):
     """
     ResNeXt-101 model with 32x4d configuration (32 groups, 4 channels per group).
     
@@ -275,15 +301,18 @@ def ResNeXt101(num_classes=200, cardinality=32, base_width=4, pruning_rate=1.0, 
         pruning_rate: Channel pruning rate (1.0 means no pruning)
         activation: Activation function to use
         use_checkpoint: Whether to use checkpoint for memory efficiency
+        drop_rate: Feature dropout rate within blocks
+        small_input: Whether input images are small (CIFAR) or large (ImageNet)
         
     Returns:
         ResNeXt-101 model
     """
     return ResNeXt(ResNeXtBlock, [3, 4, 23, 3], cardinality, base_width, 
-                   pruning_rate, num_classes, activation, use_checkpoint)
+                   pruning_rate, num_classes, activation, use_checkpoint, 
+                   drop_rate, small_input)
 
 
-def ResNeXt29(num_classes=200, cardinality=16, base_width=64, pruning_rate=1.0, activation='relu', use_checkpoint=False):
+def ResNeXt29(num_classes=200, cardinality=16, base_width=64, pruning_rate=1.0, activation='relu', use_checkpoint=False, drop_rate=0.0, small_input=True):
     """
     ResNeXt-29 model optimized for CIFAR, with 16x64d configuration.
     
@@ -294,9 +323,12 @@ def ResNeXt29(num_classes=200, cardinality=16, base_width=64, pruning_rate=1.0, 
         pruning_rate: Channel pruning rate (1.0 means no pruning)
         activation: Activation function to use
         use_checkpoint: Whether to use checkpoint for memory efficiency
+        drop_rate: Feature dropout rate within blocks
+        small_input: Whether input images are small (CIFAR) or large (ImageNet)
         
     Returns:
         ResNeXt-29 model
     """
     return ResNeXt(ResNeXtBlock, [3, 3, 3, 3], cardinality, base_width, 
-                   pruning_rate, num_classes, activation, use_checkpoint)
+                   pruning_rate, num_classes, activation, use_checkpoint, 
+                   drop_rate, small_input)

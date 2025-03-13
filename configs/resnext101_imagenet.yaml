@@ -15,9 +15,9 @@ MODEL:
   RESNEXT:
     CARDINALITY: 32
     BASE_WIDTH: 4  # Standard configuration for ResNeXt101
-    PRUNING_RATE: 0.8  # More aggressive pruning (20%) for larger model to improve speed
-    ACTIVATION: "silu"  # SiLU activation for better accuracy/performance tradeoff
-    USE_CHECKPOINT: True  # Use checkpointing to save memory on this large model
+    PRUNING_RATE: 0.9  # Less aggressive pruning (10%) for better accuracy-speed tradeoff
+    ACTIVATION: "relu"  # Use standard ReLU for better performance
+    USE_CHECKPOINT: True  # Only use checkpointing during training
 
 TRAIN:
   EPOCHS: 100
