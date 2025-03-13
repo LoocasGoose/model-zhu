@@ -1,0 +1,61 @@
+# ResNet50 Configuration for ImageNet Training
+# Optimized for memory efficiency and speed
+BASE: ['resnet18_base.yaml']
+
+OUTPUT: 'output/resnet50'
+
+DATA:
+  # Data settings
+  DATASET: "medium_imagenet"
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  BATCH_SIZE: 64
+  NUM_WORKERS: 16
+  IMG_SIZE: 224
+  # Data augmentation settings
+  AUGMENTATION:
+    COLOR_JITTER: 0.4
+    AUTO_AUGMENT: 'rand-m9-mstd0.5-inc1'
+    RANDOM_ERASE: 0.2
+    MIXUP: 0.8
+    CUTMIX: 1.0
+    CUTMIX_MINMAX: [0.5, 1.0]
+
+MODEL:
+  TYPE: 'resnet50'
+  NUM_CLASSES: 1000
+  DROP_PATH_RATE: 0.1
+  DROP_RATE: 0.0
+  LABEL_SMOOTHING: 0.1
+  ZERO_INIT_RESIDUAL: True
+  USE_SE: False  # Disable SE blocks for speed
+
+TRAIN:
+  EPOCHS: 100
+  WARMUP_EPOCHS: 5
+  LR: 0.1
+  MIN_LR: 0.0001
+  WEIGHT_DECAY: 0.0001
+  OPTIMIZER:
+    NAME: 'sgd'
+    MOMENTUM: 0.9
+    WEIGHT_DECAY: 0.0001
+    NESTEROV: True
+  LR_SCHEDULER:
+    NAME: 'cosine'
+  EMA:
+    ENABLE: True
+    DECAY: 0.99996
+
+# Memory optimization settings
+MEMORY:
+  GRAD_CLIP_NORM: 1.0
+  GRAD_ACCUM_STEPS: 1
+  VALIDATE_FREQ: 5
+  SAVE_FREQ: 10
+  EMPTY_CACHE_FREQ: 50  # Empty CUDA cache every N batches
+
+# Distributed training settings
+DIST:
+  DISTRIBUTED: False
+  WORLD_SIZE: 1
+  LOCAL_RANK: 0 

@@ -8,12 +8,13 @@ Reference:
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import torch.utils.checkpoint  # For gradient checkpointing
 
 
 class ResNetBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         """
-        Create a residual block for our ResNet18 architecture.
+        Create a memory-optimized residual block for our ResNet18 architecture.
 
         Here is the expected network structure:
         - conv layer with
@@ -30,29 +31,19 @@ class ResNetBlock(nn.Module):
                 - batchnorm layer (Batchnorm2D)
             else:
                 the shortcut layer should be an no-op
-
-        All conv layers will have a padding of 1 and no bias term. To facilitate this, consider using
-        the provided conv() helper function.
-        When performing a forward pass, the ReLU activation should be applied after the first batchnorm layer
-        and after the second batchnorm gets added to the shortcut.
         """
-        ## YOUR CODE HERE
-
-        ## Initialize the block with a call to super and make your conv and batchnorm layers.
         super(ResNetBlock, self).__init__()
         
         # First convolutional layer with batch normalization
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu1 = nn.ReLU(inplace=True)  # Use inplace ReLU for better memory efficiency
+        self.relu = nn.ReLU(inplace=True)  # Use inplace ReLU for better memory efficiency
         
         # Second convolutional layer with batch normalization
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
-        self.relu2 = nn.ReLU(inplace=True)  # Use inplace ReLU for better memory efficiency
-
-        ## Use some conditional logic when defining your shortcut layer
-        ## For a no-op layer, consider creating an empty nn.Sequential()
+        
+        # Shortcut connection
         if stride != 1 or in_channels != out_channels:
             # If dimensions change, shortcut needs to adjust dimensions
             self.shortcut = nn.Sequential(
@@ -60,42 +51,46 @@ class ResNetBlock(nn.Module):
                 nn.BatchNorm2d(out_channels)
             )
         else:
-            # Identity shortcut
-            self.shortcut = nn.Identity()  # Use Identity instead of Sequential for efficiency
+            # Identity shortcut - more efficient than empty Sequential
+            self.shortcut = nn.Identity()
+            
+        # For gradient checkpointing
+        self.use_checkpoint = False
 
-        ## END YOUR CODE
-
-    def forward(self, x):
-        """
-        Compute a forward pass of this batch of data on this residual block.
-
-        x: batch of images of shape (batch_size, num_channels, width, height)
-        returns: result of passing x through this block
-        """
-        ## YOUR CODE HERE
+    def _forward_impl(self, x):
         # Save input for the shortcut
         identity = self.shortcut(x)
         
         # First conv + bn + activation
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.relu1(out)
+        out = self.relu(out)
         
         # Second conv + bn
         out = self.conv2(out)
         out = self.bn2(out)
         
-        # Add shortcut to the output and apply activation
-        out += identity
-        out = self.relu2(out)
+        # Add shortcut to the output and apply activation (inplace operation)
+        out.add_(identity)  # Inplace addition saves memory
+        out = self.relu(out)  # Inplace ReLU
         
         return out
-        ## END YOUR CODE
+        
+    def forward(self, x):
+        """
+        Compute a forward pass with optional gradient checkpointing for memory efficiency.
+        
+        x: batch of images of shape (batch_size, num_channels, width, height)
+        returns: result of passing x through this block
+        """
+        if self.use_checkpoint and x.requires_grad:
+            return torch.utils.checkpoint.checkpoint(self._forward_impl, x)
+        else:
+            return self._forward_impl(x)
 
 
 class ResNet18(nn.Module):
-    def __init__(self, num_classes=200):
-        # Read the following, and uncomment it when you understand it, no need to add more code
+    def __init__(self, num_classes=200, enable_checkpoint=False):
         num_classes = num_classes
         super(ResNet18, self).__init__()
         self.in_channels = 64
@@ -113,6 +108,26 @@ class ResNet18(nn.Module):
         self.layer4 = self.make_block(out_channels=512, stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))  # Define as module instead of functional
         self.linear = nn.Linear(512, num_classes)
+        
+        # Initialize weights properly
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+                
+        # Enable gradient checkpointing for memory-efficient training
+        self.enable_checkpoint = enable_checkpoint
+        if enable_checkpoint:
+            self._enable_checkpointing()
+            
+    def _enable_checkpointing(self):
+        # Enable gradient checkpointing in all blocks
+        for layer in [self.layer1, self.layer2, self.layer3, self.layer4]:
+            for block in layer:
+                # Fix for type safety - use proper attribute assignment
+                setattr(block, 'use_checkpoint', True)
 
     def make_block(self, out_channels, stride):
         # Read the following, and uncomment it when you understand it, no need to add more code
