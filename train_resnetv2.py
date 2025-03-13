@@ -6,12 +6,33 @@ import argparse
 import yaml
 import numpy as np
 from pathlib import Path
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.tensorboard.writer import SummaryWriter
+
+# Make tensorboard optional
+try:
+    from torch.utils.tensorboard.writer import SummaryWriter
+    TENSORBOARD_AVAILABLE = True
+except ImportError:
+    print("TensorBoard not found, logging to TensorBoard will be disabled")
+    TENSORBOARD_AVAILABLE = False
+    # Create a dummy SummaryWriter
+    class DummySummaryWriter:
+        def __init__(self, log_dir=None):
+            self.log_dir = log_dir
+            print(f"Dummy TensorBoard writer created (logs would have been saved to {log_dir})")
+        
+        def add_scalar(self, *args, **kwargs):
+            pass
+        
+        def close(self):
+            pass
+    
+    SummaryWriter = DummySummaryWriter
 
 from models.resnetv2 import (
     resnet18, resnet34, resnet50, resnet101, resnet152,
@@ -255,10 +276,13 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
     cutmix_alpha = config.AUG.CUTMIX if use_cutmix else 0
     smoothing = config.AUG.LABEL_SMOOTHING if use_label_smoothing else 0
     
-    print(f"Epoch: {epoch}")
+    # Create tqdm progress bar
+    pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS-1}", 
+                leave=True, dynamic_ncols=True)
+    
     start_time = time.time()
     
-    for batch_idx, (inputs, targets) in enumerate(train_loader):
+    for batch_idx, (inputs, targets) in enumerate(pbar):
         inputs, targets = inputs.to(device), targets.to(device)
         
         # Apply mixup or cutmix randomly
@@ -315,13 +339,16 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
         
-        # Print progress
-        if (batch_idx + 1) % config.PRINT_FREQ == 0:
-            elapsed_time = time.time() - start_time
-            print(f"Batch {batch_idx+1}/{len(train_loader)} | "
-                  f"Loss: {train_loss/(batch_idx+1):.3f} | "
-                  f"Acc: {100.*correct/total:.3f}% | "
-                  f"Time: {elapsed_time:.2f}s")
+        # Update tqdm progress bar with metrics
+        current_lr = optimizer.param_groups[0]['lr']
+        current_loss = train_loss / (batch_idx + 1)
+        current_acc = 100. * correct / total if total > 0 else 0
+        
+        pbar.set_postfix({
+            'loss': f'{current_loss:.3f}',
+            'acc': f'{current_acc:.2f}%', 
+            'lr': f'{current_lr:.6f}'
+        })
         
         # Update learning rate for schedulers that update per step
         if hasattr(scheduler, 'step_update'):
@@ -336,7 +363,8 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
     writer.add_scalar('train/acc', train_acc, epoch)
     writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], epoch)
     
-    print(f"Training: Loss: {train_loss:.3f} | Acc: {train_acc:.3f}%")
+    elapsed_time = time.time() - start_time
+    print(f"Training: Loss: {train_loss:.3f} | Acc: {train_acc:.3f}% | Time: {elapsed_time:.2f}s")
     
     return train_loss, train_acc
 
@@ -348,8 +376,11 @@ def validate(model, val_loader, epoch, config, device, writer):
     correct = 0
     total = 0
     
+    # Create tqdm progress bar for validation
+    pbar = tqdm(val_loader, desc=f"Validation", leave=True, dynamic_ncols=True)
+    
     with torch.no_grad():
-        for inputs, targets in val_loader:
+        for inputs, targets in pbar:
             inputs, targets = inputs.to(device), targets.to(device)
             
             outputs = model(inputs)
@@ -359,6 +390,15 @@ def validate(model, val_loader, epoch, config, device, writer):
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
+            
+            # Update progress bar
+            current_loss = val_loss / (pbar.n + 1)
+            current_acc = 100. * correct / total if total > 0 else 0
+            
+            pbar.set_postfix({
+                'loss': f'{current_loss:.3f}',
+                'acc': f'{current_acc:.2f}%'
+            })
     
     # Calculate and log metrics
     val_loss /= len(val_loader)
