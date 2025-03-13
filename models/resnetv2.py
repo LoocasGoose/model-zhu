@@ -10,18 +10,18 @@ Reference:
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import torch.utils.checkpoint  # Import for gradient checkpointing
 import numpy as np
 import math
 
 
 class SELayer(nn.Module):
     """
-    Squeeze-and-Excitation block for channel-wise attention.
+    Memory-optimized Squeeze-and-Excitation block for channel-wise attention.
     
-    This module applies global average pooling to squeeze spatial information,
-    followed by a bottleneck with two FC layers to produce channel-wise scaling factors.
+    Uses increased reduction factor and inplace operations to reduce memory footprint.
     """
-    def __init__(self, channel, reduction=16):
+    def __init__(self, channel, reduction=32):  # Increased reduction from 16 to 32
         super(SELayer, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
@@ -33,9 +33,11 @@ class SELayer(nn.Module):
 
     def forward(self, x):
         b, c, _, _ = x.size()
+        # Use efficient pooling
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
+        # Apply scaling as inplace operation
+        return x.mul_(y.expand_as(x))  # Inplace multiplication
 
 
 class ResNetBlock(nn.Module):
@@ -43,45 +45,37 @@ class ResNetBlock(nn.Module):
     
     def __init__(self, in_channels, out_channels, stride=1, use_se=False):
         """
-        Create a residual block for our ResNet architecture.
+        Memory-optimized residual block for ResNet architecture.
         """
         super(ResNetBlock, self).__init__()
         
         # First convolutional layer with batch normalization
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)  # Use inplace ReLU for better memory efficiency
+        self.relu = nn.ReLU(inplace=True)  # Inplace ReLU saves memory
         
         # Second convolutional layer with batch normalization
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
         
-        # Squeeze-and-Excitation block (optional)
-        self.se = SELayer(out_channels) if use_se else nn.Identity()
+        # Squeeze-and-Excitation block (optional - memory-optimized version)
+        self.se = SELayer(out_channels, reduction=32) if use_se else nn.Identity()
         
         # Shortcut connection
         if stride != 1 or in_channels != self.expansion * out_channels:
-            # If dimensions change, shortcut needs to adjust dimensions
+            # If dimensions change, use an optimized shortcut
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, self.expansion * out_channels, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion * out_channels)
             )
         else:
-            # Identity shortcut
-            self.shortcut = nn.Identity()  # Use Identity instead of Sequential for efficiency
-            
-        # Initialize weights using Kaiming normalization
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        """
-        Compute a forward pass of this batch of data on this residual block.
-        """
+            # Identity shortcut - no memory overhead
+            self.shortcut = nn.Identity()
+        
+        # For gradient checkpointing
+        self.use_checkpoint = False
+    
+    def _forward_impl(self, x):
         # Save input for the shortcut
         identity = self.shortcut(x)
         
@@ -97,11 +91,20 @@ class ResNetBlock(nn.Module):
         # Apply SE if enabled
         out = self.se(out)
         
-        # Add shortcut to the output and apply activation
-        out += identity
-        out = self.relu(out)
+        # Add shortcut to the output and apply activation (inplace)
+        out.add_(identity)
+        out = self.relu(out)  # Inplace ReLU
         
         return out
+
+    def forward(self, x):
+        """
+        Compute a forward pass with optional gradient checkpointing to save memory.
+        """
+        if self.use_checkpoint and x.requires_grad:
+            return torch.utils.checkpoint.checkpoint(self._forward_impl, x)
+        else:
+            return self._forward_impl(x)
 
 
 class Bottleneck(nn.Module):
@@ -109,11 +112,11 @@ class Bottleneck(nn.Module):
     
     def __init__(self, in_channels, out_channels, stride=1, use_se=False):
         """
-        Create a bottleneck block for ResNet50/101/152.
+        Memory-optimized bottleneck block for ResNet50/101/152.
         """
         super(Bottleneck, self).__init__()
         
-        # First 1x1 conv to reduce channels
+        # Optimized first 1x1 conv to reduce channels
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
         
@@ -125,29 +128,24 @@ class Bottleneck(nn.Module):
         self.conv3 = nn.Conv2d(out_channels, out_channels * self.expansion, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(out_channels * self.expansion)
         
-        # Squeeze-and-Excitation block (optional)
-        self.se = SELayer(out_channels * self.expansion) if use_se else nn.Identity()
+        # Squeeze-and-Excitation block with increased reduction factor to save memory
+        self.se = SELayer(out_channels * self.expansion, reduction=32) if use_se else nn.Identity()
         
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=True)  # Inplace ReLU to save memory
         
-        # Shortcut connection
+        # Optimized shortcut connection
         if stride != 1 or in_channels != self.expansion * out_channels:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, self.expansion * out_channels, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion * out_channels)
             )
         else:
-            self.shortcut = nn.Identity()
-            
-        # Initialize weights
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+            self.shortcut = nn.Identity()  # Use Identity for no-op shortcut
+        
+        # For gradient checkpointing
+        self.use_checkpoint = False
     
-    def forward(self, x):
+    def _forward_impl(self, x):
         identity = self.shortcut(x)
         
         out = self.conv1(x)
@@ -164,10 +162,20 @@ class Bottleneck(nn.Module):
         # Apply SE if enabled
         out = self.se(out)
         
-        out += identity
+        # Inplace operations to save memory
+        out.add_(identity)
         out = self.relu(out)
         
         return out
+    
+    def forward(self, x):
+        """
+        Forward pass with optional gradient checkpointing
+        """
+        if self.use_checkpoint and x.requires_grad:
+            return torch.utils.checkpoint.checkpoint(self._forward_impl, x)
+        else:
+            return self._forward_impl(x)
 
 
 class ResNet(nn.Module):

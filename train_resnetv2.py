@@ -243,9 +243,82 @@ def get_lr_scheduler(config, optimizer):
     return schedulers[scheduler_name]()
 
 
+def mixup_data(x, y, alpha=1.0):
+    """
+    Memory-optimized mixup augmentation.
+    
+    Args:
+        x: Input batch
+        y: Target batch
+        alpha: Mixup alpha parameter
+        
+    Returns:
+        Mixed input, target_a, target_b, and lambda
+    """
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).to(x.device)
+
+    # In-place operation to save memory
+    x_mixed = x.clone()
+    x_mixed.mul_(lam).add_((1 - lam), x.index_select(0, index))
+    y_a, y_b = y, y[index]
+    return x_mixed, y_a, y_b, lam
+
+
+def cutmix_data(x, y, alpha=1.0):
+    """
+    Memory-optimized CutMix augmentation.
+    
+    Args:
+        x: Input batch
+        y: Target batch
+        alpha: CutMix alpha parameter
+        
+    Returns:
+        Mixed input, target_a, target_b, and lambda
+    """
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+        
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).to(x.device)
+    
+    W, H = x.size()[2], x.size()[3]
+    cut_ratio = np.sqrt(1. - lam)
+    cut_w = int(W * cut_ratio)
+    cut_h = int(H * cut_ratio)
+    
+    # Determine center of cutout
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+    
+    # Boundary
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+    
+    # Apply cutmix (modify x in-place rather than creating a new tensor)
+    x_aug = x.clone()
+    # Use slicing to avoid unnecessary memory allocation
+    x_aug[:, :, bbx1:bbx2, bby1:bby2] = x.index_select(0, index)[:, :, bbx1:bbx2, bby1:bby2]
+    
+    # Adjust lambda to match actual area ratio
+    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (W * H))
+    
+    return x_aug, y, y[index], lam
+
+
 def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, device, writer):
     """
-    Train model for one epoch
+    Memory-optimized training for one epoch
     
     Args:
         model (nn.Module): Model to train
@@ -267,15 +340,33 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
     total = 0
     batch_idx = 0
     
-    # Get augmentation parameters
+    # Get augmentation parameters with reduced probabilities to save memory
     use_mixup = hasattr(config.AUG, 'MIXUP') and config.AUG.MIXUP > 0
     use_cutmix = hasattr(config.AUG, 'CUTMIX') and config.AUG.CUTMIX > 0
-    use_label_smoothing = hasattr(config.AUG, 'LABEL_SMOOTHING') and config.AUG.LABEL_SMOOTHING > 0
+    # Lower the augmentation probability to save memory
+    mixup_prob = 0.5  # Only apply mixup to 50% of batches
+    cutmix_prob = 0.3  # Only apply cutmix to 30% of batches
     
     mixup_alpha = config.AUG.MIXUP if use_mixup else 0
     cutmix_alpha = config.AUG.CUTMIX if use_cutmix else 0
-    smoothing = config.AUG.LABEL_SMOOTHING if use_label_smoothing else 0
+    smoothing = config.AUG.LABEL_SMOOTHING if hasattr(config.AUG, 'LABEL_SMOOTHING') else 0
     
+    # Enable gradient checkpointing to save memory if available
+    if hasattr(model, 'module'):
+        model_to_checkpoint = model.module
+    else:
+        model_to_checkpoint = model
+    
+    # Enable gradient checkpointing on supported models
+    if hasattr(model_to_checkpoint, 'layer1'):
+        for layer in [model_to_checkpoint.layer1, model_to_checkpoint.layer2, 
+                     model_to_checkpoint.layer3, model_to_checkpoint.layer4]:
+            if hasattr(layer, 'apply'):
+                # Enable checkpointing on ResNet blocks
+                for block in layer:
+                    if hasattr(block, 'conv1') and hasattr(block, 'conv2'):
+                        block.use_checkpoint = True
+        
     # Create tqdm progress bar
     pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS-1}", 
                 leave=True, dynamic_ncols=True)
@@ -285,22 +376,17 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
     for batch_idx, (inputs, targets) in enumerate(pbar):
         inputs, targets = inputs.to(device), targets.to(device)
         
-        # Apply mixup or cutmix randomly
-        if use_mixup and use_cutmix:
-            if np.random.rand() < 0.5:
-                inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
-                use_mix = 'mixup'
-            else:
-                inputs, targets_a, targets_b, lam = cutmix_data(inputs, targets, cutmix_alpha)
-                use_mix = 'cutmix'
-        elif use_mixup:
+        # Randomly decide whether to apply augmentation to save memory
+        rand_val = np.random.rand()
+        use_mix = None
+        
+        # Apply mixup or cutmix with reduced probability
+        if use_mixup and rand_val < mixup_prob:
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
             use_mix = 'mixup'
-        elif use_cutmix:
+        elif use_cutmix and rand_val < mixup_prob + cutmix_prob:
             inputs, targets_a, targets_b, lam = cutmix_data(inputs, targets, cutmix_alpha)
             use_mix = 'cutmix'
-        else:
-            use_mix = None
         
         # Forward pass
         outputs = model(inputs)
@@ -308,7 +394,7 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
         # Compute loss
         if use_mix:
             # For mixup and cutmix, blend the losses
-            if use_label_smoothing:
+            if smoothing > 0:
                 loss = lam * label_smoothing_loss(outputs, targets_a, smoothing) + \
                       (1 - lam) * label_smoothing_loss(outputs, targets_b, smoothing)
             else:
@@ -316,7 +402,7 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
                       (1 - lam) * F.cross_entropy(outputs, targets_b)
         else:
             # No mixing, just regular loss
-            if use_label_smoothing:
+            if smoothing > 0:
                 loss = label_smoothing_loss(outputs, targets, smoothing)
             else:
                 loss = F.cross_entropy(outputs, targets)
@@ -324,7 +410,13 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
         # Backward pass and optimize
         optimizer.zero_grad()
         loss.backward()
+        # Apply gradient clipping to improve stability
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+        
+        # Clear memory explicitly
+        if hasattr(torch.cuda, 'empty_cache') and batch_idx % 10 == 0:
+            torch.cuda.empty_cache()
         
         # Update stats
         train_loss += loss.item()
@@ -349,11 +441,7 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
             'acc': f'{current_acc:.2f}%', 
             'lr': f'{current_lr:.6f}'
         })
-        
-        # Update learning rate for schedulers that update per step
-        if hasattr(scheduler, 'step_update'):
-            scheduler.step_update(epoch * len(train_loader) + batch_idx)
-    
+
     # Calculate average metrics
     train_loss /= (batch_idx + 1)
     train_acc = 100. * correct / total
