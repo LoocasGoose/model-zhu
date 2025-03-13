@@ -1,4 +1,5 @@
 from .resnext import ResNeXt, ResNeXtBlock, ResNeXt29, ResNeXt50, ResNeXt101
+from .resnet import ResNet18
 
 # Function to build model from config
 def build_model(config):
@@ -15,12 +16,17 @@ def build_model(config):
     
     # Set default values for parameters that might not exist in all config files
     drop_rate = 0.0
-    if hasattr(config.MODEL.RESNEXT, 'DROP_RATE'):
+    if hasattr(config.MODEL, 'RESNEXT') and hasattr(config.MODEL.RESNEXT, 'DROP_RATE'):
         drop_rate = config.MODEL.RESNEXT.DROP_RATE
     elif hasattr(config.MODEL, 'DROP_RATE'):  # Fallback to the old location
         drop_rate = config.MODEL.DROP_RATE
     
-    if model_type == "resnext29":
+    if model_type == "resnet18":
+        model = ResNet18(
+            num_classes=config.MODEL.NUM_CLASSES if hasattr(config.MODEL, 'NUM_CLASSES') else 
+                       (config.DATA.NUM_CLASSES if hasattr(config.DATA, 'NUM_CLASSES') else 200)
+        )
+    elif model_type == "resnext29":
         model = ResNeXt29(
             num_classes=config.DATA.NUM_CLASSES if hasattr(config.DATA, 'NUM_CLASSES') else 200,
             cardinality=config.MODEL.RESNEXT.CARDINALITY,
