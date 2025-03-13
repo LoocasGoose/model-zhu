@@ -50,20 +50,13 @@ def convert_predictions(
     if len(data.shape) < 2:
         raise ValueError(f"Predictions must be 2D with shape (n_samples, n_classes), got {data.shape}")
     
-    # Convert logits to class predictions (argmax along the class dimension)
     data = np.argmax(data, axis=1)
     
-    # Validate number of predictions
     if len(data) != expected_rows:
         print(f"Warning: Found {len(data)} predictions, but expected {expected_rows}")
     
-    # Create DataFrame with predictions
     df = pd.DataFrame(data, columns=["Category"])
     
-    # Start indexing from 1 for submission format
-    df.index += 1
-    
-    # Generate filename and handle directory paths
     if submission_name is None:
         # Try to extract model name from the input path
         submission_name = input_path.parent.name
