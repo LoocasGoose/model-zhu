@@ -172,7 +172,10 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
     
     optimizer.zero_grad()  # Zero gradients at the start of epoch
     
-    for idx, (samples, targets) in enumerate(tqdm(data_loader, leave=False)):
+    # Create tqdm progress bar
+    pbar = tqdm(data_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS}", leave=True)
+    
+    for idx, (samples, targets) in enumerate(pbar):
         # Measure data loading time
         data_time.update(time.time() - end)
         
@@ -226,37 +229,31 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
         batch_time.update(time.time() - end)
         end = time.time()
 
-        # Print progress less frequently to reduce overhead
-        if idx % 200 == 0 or idx == num_steps - 1:
-            lr = optimizer.param_groups[0]["lr"]
-            memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
-            logger.info(
-                f"Train: [{epoch}/{config.TRAIN.EPOCHS}][{idx}/{num_steps}]\t"
-                f"Data {data_time.val:.4f} ({data_time.avg:.4f})\t"
-                f"Time {batch_time.val:.4f} ({batch_time.avg:.4f})\t"
-                f"Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t"
-                f"Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t"
-                f"Mem {memory_used:.0f}MB"
-            )
+        # Update progress bar with metrics
+        lr = optimizer.param_groups[0]["lr"]
+        memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+        pbar.set_postfix({
+            'loss': f'{loss_meter.avg:.4f}',
+            'acc': f'{acc1_meter.avg:.2f}%',
+            'lr': f'{lr:.6f}',
+            'mem': f'{memory_used:.0f}MB',
+            'time/img': f'{batch_time.avg:.3f}s'
+        })
             
-            # Check for CUDA memory fragmentation
-            if idx > 0 and idx % 200 == 0:
-                # Periodically empty CUDA cache to prevent fragmentation
-                torch.cuda.empty_cache()
+        # Periodically empty CUDA cache to prevent fragmentation (every 1000 batches)
+        if idx > 0 and idx % 1000 == 0:
+            torch.cuda.empty_cache()
 
     # Print final epoch stats
-    lr = optimizer.param_groups[0]["lr"]
-    memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
-    logger.info(
-        f"Train: [{epoch}/{config.TRAIN.EPOCHS}]\t"
-        f"lr {lr:.6f}\t"
-        f"time {batch_time.avg:.4f}\t"
-        f"loss {loss_meter.avg:.4f}\t"
-        f"Acc@1 {acc1_meter.avg:.3f}\t"
-        f"Mem {memory_used:.0f}MB"
-    )
     epoch_time = time.time() - start
-    logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
+    logger.info(
+        f"EPOCH {epoch} training summary: "
+        f"loss {loss_meter.avg:.4f}, "
+        f"accuracy {acc1_meter.avg:.2f}%, "
+        f"lr {lr:.6f}, "
+        f"time {datetime.timedelta(seconds=int(epoch_time))}"
+    )
+    
     return acc1_meter.avg, loss_meter.avg
 
 
