@@ -227,7 +227,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
         end = time.time()
 
         # Print progress less frequently to reduce overhead
-        if idx % 50 == 0 or idx == num_steps - 1:
+        if idx % 200 == 0 or idx == num_steps - 1:
             lr = optimizer.param_groups[0]["lr"]
             memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
             logger.info(
