@@ -239,6 +239,13 @@ def validate(config, data_loader, model):
         images = images.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
 
+        # Add mixup for validation (consistent with training)
+        mixup_alpha = getattr(config.AUG, 'MIXUP_ALPHA', 0.0)
+        if mixup_alpha > 0 and model.training:
+            from timm.data.mixup import Mixup
+            mixup_fn = Mixup(mixup_alpha=mixup_alpha)
+            images, target = mixup_fn(images, target)
+
         # compute output with mixed precision for efficiency
         if use_amp:
             with autocast():

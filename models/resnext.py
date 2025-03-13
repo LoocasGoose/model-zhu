@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 from torch.utils.checkpoint import checkpoint
+from torch.nn import Dropout2d
 
 
 class ResNeXtBlock(nn.Module):
@@ -15,7 +16,7 @@ class ResNeXtBlock(nn.Module):
     A block for ResNeXt architecture that uses grouped convolutions for the 
     split-transform-merge strategy with cardinality.
     """
-    def __init__(self, in_channels, out_channels, stride=1, cardinality=32, base_width=4, pruning_rate=1.0, activation='relu'):
+    def __init__(self, in_channels, out_channels, stride=1, cardinality=32, base_width=4, pruning_rate=1.0, activation='relu', drop_rate=0.0):
         """
         Create a ResNeXt block with cardinality.
         
@@ -27,6 +28,7 @@ class ResNeXtBlock(nn.Module):
             base_width: Base width for each group, controlling the bottleneck width
             pruning_rate: Channel pruning rate (1.0 means no pruning)
             activation: Activation function to use ('relu', 'relu6', or 'silu')
+            drop_rate: Dropout rate
         """
         super(ResNeXtBlock, self).__init__()
         
@@ -62,6 +64,9 @@ class ResNeXtBlock(nn.Module):
             )
         else:
             self.shortcut = nn.Identity()
+        
+        # Add dropout layer after final activation
+        self.dropout = Dropout2d(p=drop_rate) if drop_rate > 0 else nn.Identity()
 
     def forward(self, x):
         """
@@ -93,6 +98,9 @@ class ResNeXtBlock(nn.Module):
         out += identity
         out = self.relu(out)
         
+        # Add dropout after activation
+        out = self.dropout(out)
+        
         return out
 
 
@@ -101,7 +109,7 @@ class ResNeXt(nn.Module):
     ResNeXt model with configurable depth, based on the original paper.
     """
     def __init__(self, block, num_blocks, cardinality=32, base_width=4, pruning_rate=1.0, 
-                 num_classes=200, activation='relu', use_checkpoint=False):
+                 num_classes=200, activation='relu', use_checkpoint=False, layer_drop_rate=0.0):
         """
         Initialize ResNeXt model.
         
@@ -114,6 +122,7 @@ class ResNeXt(nn.Module):
             num_classes: Number of output classes
             activation: Activation function to use ('relu', 'relu6', or 'silu')
             use_checkpoint: Whether to use gradient checkpointing for memory efficiency
+            layer_drop_rate: Layer dropout rate
         """
         super(ResNeXt, self).__init__()
         self.cardinality = cardinality
@@ -122,6 +131,7 @@ class ResNeXt(nn.Module):
         self.in_channels = 64
         self.activation = activation
         self.use_checkpoint = use_checkpoint
+        self.layer_drop_rate = layer_drop_rate
         
         # Initial convolution layer
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -201,14 +211,16 @@ class ResNeXt(nn.Module):
         x = self.relu(x)
         
         # ResNeXt layers
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        
-        # Apply checkpointing to the last layer only if enabled
-        if self.use_checkpoint and self.training:
-            x = checkpoint(self.layer4, x)
+        if self.training and self.layer_drop_rate > 0:
+            for layer in [self.layer1, self.layer2, self.layer3, self.layer4]:
+                if torch.rand(1) < self.layer_drop_rate:
+                    x = checkpoint(layer, x) if self.use_checkpoint else layer(x)
+                else:
+                    x = x  # Skip layer
         else:
+            x = self.layer1(x)
+            x = self.layer2(x)
+            x = self.layer3(x)
             x = self.layer4(x)
         
         # Pooling and classification
