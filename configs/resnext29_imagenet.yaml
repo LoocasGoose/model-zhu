@@ -12,15 +12,19 @@ MODEL:
   RESNEXT:
     CARDINALITY: 16
     BASE_WIDTH: 64  # Use typical values for ResNeXt29
+    PRUNING_RATE: 1.0  # No pruning needed for smaller model
+    ACTIVATION: "relu"  # Standard ReLU is efficient for this model
+    USE_CHECKPOINT: False  # No need for checkpointing this smaller model
 
 TRAIN:
   EPOCHS: 100
-  LR: 0.05
+  LR: 0.1  # Higher learning rate for faster convergence
   OPTIMIZER:
     NAME: "sgd"
     MOMENTUM: 0.9
   LR_SCHEDULER:
     NAME: "cosine"
+  GRADIENT_ACCUMULATION_STEPS: 1  # No need for gradient accumulation
 
 OUTPUT: "output/resnext29_imagenet"
 SAVE_FREQ: 5

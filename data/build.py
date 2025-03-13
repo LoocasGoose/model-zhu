@@ -54,17 +54,22 @@ def build_loader(config):
         print(f"Using full dataset ({full_size} samples) for training")
 
     # Determine if we can use persistent workers (only supported in PyTorch 1.7.0+)
-    persistent_workers = config.DATA.NUM_WORKERS > 0
+    persistent_workers = getattr(config.DATA, 'PERSISTENT_WORKERS', True) and config.DATA.NUM_WORKERS > 0
+    prefetch_factor = getattr(config.DATA, 'PREFETCH_FACTOR', 2) if config.DATA.NUM_WORKERS > 0 else None
+    pin_memory = getattr(config.DATA, 'PIN_MEMORY', True)
+    
+    print(f"DataLoader settings: persistent_workers={persistent_workers}, "
+          f"prefetch_factor={prefetch_factor}, pin_memory={pin_memory}")
     
     data_loader_train = DataLoader(
         dataset_train,
         batch_size=config.DATA.BATCH_SIZE,
         shuffle=True,
         num_workers=config.DATA.NUM_WORKERS,
-        pin_memory=config.DATA.PIN_MEMORY,
+        pin_memory=pin_memory,
         drop_last=True,  # Drop last incomplete batch for consistent sizes
         persistent_workers=persistent_workers,  # Keep workers alive between epochs
-        prefetch_factor=2 if config.DATA.NUM_WORKERS > 0 else None,  # Prefetch data
+        prefetch_factor=prefetch_factor,  # Prefetch data
     )
 
     data_loader_val = DataLoader(
@@ -72,10 +77,10 @@ def build_loader(config):
         batch_size=config.DATA.BATCH_SIZE,
         shuffle=False,
         num_workers=config.DATA.NUM_WORKERS,
-        pin_memory=config.DATA.PIN_MEMORY,
+        pin_memory=pin_memory,
         drop_last=False,
         persistent_workers=persistent_workers,
-        prefetch_factor=2 if config.DATA.NUM_WORKERS > 0 else None,
+        prefetch_factor=prefetch_factor,
     )
 
     data_loader_test = DataLoader(
@@ -83,10 +88,10 @@ def build_loader(config):
         batch_size=config.DATA.BATCH_SIZE,
         shuffle=False,
         num_workers=config.DATA.NUM_WORKERS,
-        pin_memory=config.DATA.PIN_MEMORY,
+        pin_memory=pin_memory,
         drop_last=False,
         persistent_workers=persistent_workers,
-        prefetch_factor=2 if config.DATA.NUM_WORKERS > 0 else None,
+        prefetch_factor=prefetch_factor,
     )
 
     return dataset_train, dataset_val, dataset_test, data_loader_train, data_loader_val, data_loader_test

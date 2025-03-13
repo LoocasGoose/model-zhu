@@ -23,23 +23,50 @@ def build_model(config):
         if cardinality == 32 and base_width == 4:  # If using default values
             cardinality = 16  # Better for CIFAR
             base_width = 64   # Better for CIFAR
+            
+        # Get optimization parameters
+        pruning_rate = getattr(config.MODEL.RESNEXT, 'PRUNING_RATE', 1.0)
+        activation = getattr(config.MODEL.RESNEXT, 'ACTIVATION', 'relu')
+        use_checkpoint = getattr(config.MODEL.RESNEXT, 'USE_CHECKPOINT', False)
+        
         model = ResNeXt29(num_classes=config.MODEL.NUM_CLASSES, 
                           cardinality=cardinality,
-                          base_width=base_width)
+                          base_width=base_width,
+                          pruning_rate=pruning_rate,
+                          activation=activation,
+                          use_checkpoint=use_checkpoint)
     elif model_type == 'resnext50':
         # ResNeXt-50 with 32x4d configuration by default
         cardinality = config.MODEL.RESNEXT.CARDINALITY
         base_width = config.MODEL.RESNEXT.BASE_WIDTH
+        
+        # Get optimization parameters
+        pruning_rate = getattr(config.MODEL.RESNEXT, 'PRUNING_RATE', 0.9)  # Slight pruning by default for ResNeXt50
+        activation = getattr(config.MODEL.RESNEXT, 'ACTIVATION', 'silu')   # SiLU by default for better performance
+        use_checkpoint = getattr(config.MODEL.RESNEXT, 'USE_CHECKPOINT', False)
+        
         model = ResNeXt50(num_classes=config.MODEL.NUM_CLASSES,
                           cardinality=cardinality,
-                          base_width=base_width)
+                          base_width=base_width,
+                          pruning_rate=pruning_rate,
+                          activation=activation,
+                          use_checkpoint=use_checkpoint)
     elif model_type == 'resnext101':
         # ResNeXt-101 with 32x4d configuration by default
         cardinality = config.MODEL.RESNEXT.CARDINALITY
         base_width = config.MODEL.RESNEXT.BASE_WIDTH
+        
+        # Get optimization parameters with more aggressive defaults for the largest model
+        pruning_rate = getattr(config.MODEL.RESNEXT, 'PRUNING_RATE', 0.8)   # More pruning by default for ResNeXt101
+        activation = getattr(config.MODEL.RESNEXT, 'ACTIVATION', 'silu')    # SiLU by default for better performance
+        use_checkpoint = getattr(config.MODEL.RESNEXT, 'USE_CHECKPOINT', True)  # Use checkpointing by default
+        
         model = ResNeXt101(num_classes=config.MODEL.NUM_CLASSES,
                            cardinality=cardinality,
-                           base_width=base_width)
+                           base_width=base_width,
+                           pruning_rate=pruning_rate,
+                           activation=activation,
+                           use_checkpoint=use_checkpoint)
     # elif model_type == 'densenet':
     #     # Use densenet121 by default, but allow command-line override 
     #     # via the --opts feature for different model variations

@@ -81,7 +81,19 @@ def main(config):
     lr_scheduler = CosineAnnealingLR(optimizer, config.TRAIN.EPOCHS)
 
     # Initialize gradient scaler for mixed precision training
-    scaler = GradScaler()
+    use_amp = getattr(config.TRAIN, 'USE_AMP', False)
+    scaler = GradScaler() if use_amp else None
+    logger.info(f"Using mixed precision training: {use_amp}")
+    
+    # Get gradient accumulation steps
+    accumulation_steps = getattr(config.TRAIN, 'GRADIENT_ACCUMULATION_STEPS', 1)
+    logger.info(f"Using gradient accumulation with {accumulation_steps} steps")
+    
+    # If using gradient accumulation, adjust learning rate accordingly
+    if accumulation_steps > 1:
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = param_group['lr'] * accumulation_steps
+        logger.info(f"Adjusted learning rate for gradient accumulation: {optimizer.param_groups[0]['lr']}")
 
     max_accuracy = 0.0
 
@@ -95,7 +107,7 @@ def main(config):
     logger.info("Start training")
     start_time = time.time()
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
-        train_acc1, train_loss = train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, scaler)
+        train_acc1, train_loss = train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, scaler, accumulation_steps)
         logger.info(f" * Train Acc {train_acc1:.3f} Train Loss {train_loss:.3f}")
         logger.info(f"Accuracy of the network on the {len(dataset_train)} train images ----->: {train_acc1:.1f}%")
 
@@ -136,7 +148,7 @@ def main(config):
     # TODO save predictions to csv in kaggle format
 
 
-def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, scaler):
+def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, scaler, accumulation_steps=1):
     model.train()
 
     num_steps = len(data_loader)
@@ -146,27 +158,45 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
 
     start = time.time()
     end = time.time()
+    
+    # Determine whether to use mixed precision
+    use_amp = scaler is not None
+    
+    optimizer.zero_grad()  # Zero gradients at the start of epoch
+    
     for idx, (samples, targets) in enumerate(tqdm(data_loader, leave=False)):
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
-
-        optimizer.zero_grad(set_to_none=True)  # Faster than .zero_grad()
         
         # Use automatic mixed precision for faster computation
-        with autocast():
+        with autocast() if use_amp else contextlib.nullcontext():
             outputs = model(samples)
-            loss = criterion(outputs, targets)
+            loss = criterion(outputs, targets) / accumulation_steps  # Scale loss by accumulation steps
         
-        # Scale gradients and perform backward pass
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        if use_amp:
+            # Scale gradients and perform backward pass
+            scaler.scale(loss).backward()
+            
+            # Step optimizer every accumulation_steps batches
+            if (idx + 1) % accumulation_steps == 0 or (idx + 1) == num_steps:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+        else:
+            # Standard backward pass without mixed precision
+            loss.backward()
+            
+            # Step optimizer every accumulation_steps batches
+            if (idx + 1) % accumulation_steps == 0 or (idx + 1) == num_steps:
+                optimizer.step()
+                optimizer.zero_grad()
 
-        # Calculate accuracy
+        # Calculate accuracy (non-scaled loss for metrics)
         with torch.no_grad():
             (acc1,) = accuracy(outputs, targets)
             
-        loss_meter.update(loss.item(), targets.size(0))
+        # Update metrics with unscaled values
+        loss_meter.update(loss.item() * accumulation_steps, targets.size(0))  # Undo the scaling
         acc1_meter.update(acc1.item(), targets.size(0))
         batch_time.update(time.time() - end)
         end = time.time()
@@ -194,6 +224,9 @@ def validate(config, data_loader, model):
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
     acc1_meter = AverageMeter()
+    
+    # Determine whether to use mixed precision
+    use_amp = getattr(config.TRAIN, 'USE_AMP', False)
 
     end = time.time()
     for idx, (images, target) in enumerate(data_loader):
@@ -201,7 +234,7 @@ def validate(config, data_loader, model):
         target = target.cuda(non_blocking=True)
 
         # compute output with mixed precision for efficiency
-        with autocast():
+        with autocast() if use_amp else contextlib.nullcontext():
             output = model(images)
             loss = criterion(output, target)
 
@@ -230,15 +263,25 @@ def validate(config, data_loader, model):
 def evaluate(config, data_loader, model):
     model.eval()
     preds = []
+    
+    # Determine whether to use mixed precision
+    use_amp = getattr(config.TRAIN, 'USE_AMP', False)
+    
     for idx, (images, _) in enumerate(tqdm(data_loader)):
         images = images.cuda(non_blocking=True)
-        output = model(images)
+        
+        # Use mixed precision for inference if enabled
+        with autocast() if use_amp else contextlib.nullcontext():
+            output = model(images)
+            
         preds.append(output.cpu().numpy())
     preds = np.concatenate(preds)
     return preds
 
 
 if __name__ == "__main__":
+    import contextlib  # For nullcontext
+
     args, config = parse_option()
 
     seed = config.SEED

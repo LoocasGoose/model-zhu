@@ -12,6 +12,9 @@ MODEL:
   RESNEXT:
     CARDINALITY: 32
     BASE_WIDTH: 4
+    PRUNING_RATE: 0.9
+    ACTIVATION: "silu"
+    USE_CHECKPOINT: False
 
 TRAIN:
   EPOCHS: 100
@@ -21,6 +24,7 @@ TRAIN:
     MOMENTUM: 0.9
   LR_SCHEDULER:
     NAME: "cosine"
+  GRADIENT_ACCUMULATION_STEPS: 2
 
 OUTPUT: "output/resnext50_imagenet"
 SAVE_FREQ: 5

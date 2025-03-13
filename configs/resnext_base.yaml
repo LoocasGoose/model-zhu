@@ -4,15 +4,26 @@ DATA:
   IMG_SIZE: 224
   NUM_WORKERS: 8
   PIN_MEMORY: True
+  PREFETCH_FACTOR: 2
+  PERSISTENT_WORKERS: True
 
 MODEL:
   NUM_CLASSES: 200
   DROP_RATE: 0.1
   SMALL_INPUTS: False
+  RESNEXT:
+    CARDINALITY: 32
+    BASE_WIDTH: 4
+    PRUNING_RATE: 1.0  # Default: No pruning, override in model-specific config
+    ACTIVATION: "relu"  # Options: relu, relu6, silu
+    USE_CHECKPOINT: False  # Default: No checkpoint, override for larger models
 
 TRAIN:
   EPOCHS: 100
   WARMUP_EPOCHS: 5
+  GRADIENT_ACCUMULATION_STEPS: 1  # Default, changed for larger models
+  USE_AMP: True  # Enable automatic mixed precision training
+  OPT_LEVEL: "O1"  # Mixed precision optimization level
   OPTIMIZER:
     NAME: "sgd"
     MOMENTUM: 0.9
