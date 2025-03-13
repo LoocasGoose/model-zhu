@@ -38,7 +38,7 @@ class Config:
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train ResNetV2 on Medium ImageNet')
-    parser.add_argument('--config', type=str, default='configs/resnetv2_medium_imagenet.yaml',
+    parser.add_argument('--cfg', type=str, default='configs/resnetv2_medium_imagenet.yaml',
                         help='Path to config file')
     parser.add_argument('--resume', type=str, default='',
                         help='Resume from checkpoint')
@@ -50,6 +50,8 @@ def parse_args():
                         help='GPU ID')
     parser.add_argument('--eval', action='store_true',
                         help='Evaluate only')
+    parser.add_argument('--opts', nargs='*', default=None,
+                        help='Modify config options using the command-line')
     return parser.parse_args()
 
 
@@ -79,6 +81,41 @@ def load_config(config_file):
         # No base config, just load the current config
         config = Config()
         config.update(config_dict)
+    
+    return config
+
+
+def update_config_from_opts(config, opts):
+    """Update config with command line options"""
+    if opts is None:
+        return config
+    
+    # Process options in pairs (key, value)
+    for i in range(0, len(opts), 2):
+        if i + 1 < len(opts):
+            key = opts[i]
+            value = opts[i+1]
+            
+            # Convert value to appropriate type
+            if value.lower() == 'true':
+                value = True
+            elif value.lower() == 'false':
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            elif value.replace('.', '', 1).isdigit() and value.count('.') < 2:
+                value = float(value)
+
+            # Handle nested attributes
+            keys = key.split('.')
+            cfg = config
+            for k in keys[:-1]:
+                if not hasattr(cfg, k):
+                    setattr(cfg, k, Config())
+                cfg = getattr(cfg, k)
+            
+            # Set the value
+            setattr(cfg, keys[-1], value)
     
     return config
 
@@ -375,8 +412,9 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     
-    # Load config
-    config = load_config(args.config)
+    # Load config and apply overrides
+    config = load_config(args.cfg)
+    config = update_config_from_opts(config, args.opts)
     
     # Override output directory if specified
     if args.output:
