@@ -4,8 +4,10 @@ DATA:
   DATASET: "medium_imagenet"
   MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
   IMG_SIZE: 224
-  BATCH_SIZE: 128  # Can use larger batch size for smaller model
+  BATCH_SIZE: 96  # Reduced slightly to allow mixed precision overhead
   NUM_WORKERS: 8
+  PIN_MEMORY: True  # Enable pinned memory for faster CPU to GPU transfers
+  PREFETCH_FACTOR: 2  # Data prefetching
 
 MODEL:
   NAME: "resnext29"
@@ -14,7 +16,8 @@ MODEL:
     BASE_WIDTH: 64  # Use typical values for ResNeXt29
     PRUNING_RATE: 1.0  # No pruning needed for smaller model
     ACTIVATION: "relu"  # Standard ReLU is efficient for this model
-    USE_CHECKPOINT: False  # No need for checkpointing this smaller model
+    USE_CHECKPOINT: True  # Enable checkpointing to save memory
+    DROP_RATE: 0.0  # No dropout during training for efficiency
 
 TRAIN:
   EPOCHS: 100
@@ -22,9 +25,14 @@ TRAIN:
   OPTIMIZER:
     NAME: "sgd"
     MOMENTUM: 0.9
+    NESTEROV: True  # Enable Nesterov momentum for faster convergence
   LR_SCHEDULER:
     NAME: "cosine"
+    WARMUP_EPOCHS: 5  # Add warmup to improve stability
   GRADIENT_ACCUMULATION_STEPS: 1  # No need for gradient accumulation
+  USE_AMP: True  # Enable Automatic Mixed Precision training
+  GRADIENT_CLIP_VAL: 1.0  # Add gradient clipping for stability
+  CHANNELS_LAST: True  # Enable channels_last memory format for better performance
 
 OUTPUT: "output/resnext29_imagenet"
 SAVE_FREQ: 5

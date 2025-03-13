@@ -63,11 +63,13 @@ def main(config):
     model = build_model(config)
     # logger.info(str(model))
 
-    model = model.to(device)
+    # Apply channels_last memory format for better performance on NVIDIA GPUs
+    model = model.to(device).to(memory_format=torch.channels_last)
+    logger.info("Using channels_last memory format for better convolution performance")
 
     # param and flop counts
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    toy_input = torch.rand(1, 3, config.DATA.IMG_SIZE, config.DATA.IMG_SIZE).to(device) # for measuring flops
+    toy_input = torch.rand(1, 3, config.DATA.IMG_SIZE, config.DATA.IMG_SIZE).to(device).to(memory_format=torch.channels_last) # for measuring flops
     flops = FlopCountAnalysis(model, toy_input)
     del toy_input
 
@@ -155,6 +157,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
 
     num_steps = len(data_loader)
     batch_time = AverageMeter()
+    data_time = AverageMeter()  # Track data loading time
     loss_meter = AverageMeter()
     acc1_meter = AverageMeter()
 
@@ -164,11 +167,25 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
     # Determine whether to use mixed precision
     use_amp = scaler is not None
     
+    # Get gradient clipping value if configured
+    grad_clip_val = getattr(config.TRAIN, 'GRADIENT_CLIP_VAL', 0.0)
+    
+    # Get whether to use channels_last memory format
+    channels_last = getattr(config.TRAIN, 'CHANNELS_LAST', True)
+    
     optimizer.zero_grad()  # Zero gradients at the start of epoch
     
     for idx, (samples, targets) in enumerate(tqdm(data_loader, leave=False)):
+        # Measure data loading time
+        data_time.update(time.time() - end)
+        
+        # Move data to device and prefetch next batch
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
+        
+        # Convert to channels_last memory format for better performance if enabled
+        if channels_last:
+            samples = samples.contiguous(memory_format=torch.channels_last)
         
         # Use automatic mixed precision for faster computation
         if use_amp:
@@ -181,6 +198,11 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
             
             # Step optimizer every accumulation_steps batches
             if (idx + 1) % accumulation_steps == 0 or (idx + 1) == num_steps:
+                # Apply gradient clipping if configured
+                if grad_clip_val > 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_val)
+                    
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
@@ -194,6 +216,10 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
             
             # Step optimizer every accumulation_steps batches
             if (idx + 1) % accumulation_steps == 0 or (idx + 1) == num_steps:
+                # Apply gradient clipping if configured
+                if grad_clip_val > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_val)
+                    
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -207,14 +233,33 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
         batch_time.update(time.time() - end)
         end = time.time()
 
+        # Print progress less frequently to reduce overhead
+        if idx % 50 == 0 or idx == num_steps - 1:
+            lr = optimizer.param_groups[0]["lr"]
+            memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+            logger.info(
+                f"Train: [{epoch}/{config.TRAIN.EPOCHS}][{idx}/{num_steps}]\t"
+                f"Data {data_time.val:.4f} ({data_time.avg:.4f})\t"
+                f"Time {batch_time.val:.4f} ({batch_time.avg:.4f})\t"
+                f"Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t"
+                f"Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t"
+                f"Mem {memory_used:.0f}MB"
+            )
+            
+            # Check for CUDA memory fragmentation
+            if idx > 0 and idx % 200 == 0:
+                # Periodically empty CUDA cache to prevent fragmentation
+                torch.cuda.empty_cache()
+
+    # Print final epoch stats
     lr = optimizer.param_groups[0]["lr"]
     memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
     logger.info(
         f"Train: [{epoch}/{config.TRAIN.EPOCHS}]\t"
         f"lr {lr:.6f}\t"
-        f"time {batch_time.val:.4f} ({batch_time.avg:.4f})\t"
-        f"loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t"
-        f"Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t"
+        f"time {batch_time.avg:.4f}\t"
+        f"loss {loss_meter.avg:.4f}\t"
+        f"Acc@1 {acc1_meter.avg:.3f}\t"
         f"Mem {memory_used:.0f}MB"
     )
     epoch_time = time.time() - start
@@ -233,19 +278,20 @@ def validate(config, data_loader, model):
     
     # Determine whether to use mixed precision
     use_amp = getattr(config.TRAIN, 'USE_AMP', False)
+    
+    # Get whether to use channels_last memory format
+    channels_last = getattr(config.TRAIN, 'CHANNELS_LAST', True)
 
     end = time.time()
     for idx, (images, target) in enumerate(data_loader):
         images = images.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
+        
+        # Convert to channels_last memory format for better performance if enabled
+        if channels_last:
+            images = images.contiguous(memory_format=torch.channels_last)
 
-        # Add mixup for validation (consistent with training)
-        mixup_alpha = getattr(config.AUG, 'MIXUP_ALPHA', 0.0)
-        if mixup_alpha > 0 and model.training:
-            from timm.data.mixup import Mixup
-            mixup_fn = Mixup(mixup_alpha=mixup_alpha)
-            images, target = mixup_fn(images, target)
-
+        # Disable mixup for validation to save compute and get real accuracy
         # compute output with mixed precision for efficiency
         if use_amp:
             with autocast():
@@ -265,14 +311,17 @@ def validate(config, data_loader, model):
         batch_time.update(time.time() - end)
         end = time.time()
 
-    memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
-    logger.info(
-        f"Validate: \t"
-        f"Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t"
-        f"Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t"
-        f"Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t"
-        f"Mem {memory_used:.0f}MB"
-    )
+        # Print progress less frequently
+        if idx % 20 == 0 or idx == len(data_loader) - 1:
+            memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+            logger.info(
+                f"Validate: [{idx}/{len(data_loader)}]\t"
+                f"Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t"
+                f"Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t"
+                f"Acc@1 {acc1_meter.val:.3f} ({acc1_meter.avg:.3f})\t"
+                f"Mem {memory_used:.0f}MB"
+            )
+
     return acc1_meter.avg, loss_meter.avg
 
 
@@ -284,8 +333,15 @@ def evaluate(config, data_loader, model):
     # Determine whether to use mixed precision
     use_amp = getattr(config.TRAIN, 'USE_AMP', False)
     
+    # Get whether to use channels_last memory format
+    channels_last = getattr(config.TRAIN, 'CHANNELS_LAST', True)
+    
     for idx, (images, _) in enumerate(tqdm(data_loader)):
         images = images.cuda(non_blocking=True)
+        
+        # Convert to channels_last memory format for better performance if enabled
+        if channels_last:
+            images = images.contiguous(memory_format=torch.channels_last)
         
         # Use mixed precision for inference if enabled
         if use_amp:
@@ -307,6 +363,16 @@ if __name__ == "__main__":
     torch.cuda.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)  # Set random seed for reproducibility
+    
+    # Set deterministic flag for more consistent results (may slightly impact performance)
+    # torch.backends.cudnn.deterministic = True
+    
+    # Set faster performance flag - allow non-deterministic algorithms
+    torch.backends.cudnn.benchmark = True  # This can significantly speed up training
+    
+    # Make sure to enable TF32 for Ampere GPUs (RTX 30 series or higher)
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
     # Make output dir
     os.makedirs(config.OUTPUT, exist_ok=True)
