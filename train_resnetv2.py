@@ -96,27 +96,30 @@ def update_config_from_opts(config, opts):
             key = opts[i]
             value = opts[i+1]
             
-            # Convert value to appropriate type
-            if value.lower() == 'true':
-                value = True
-            elif value.lower() == 'false':
-                value = False
-            elif value.isdigit():
-                value = int(value)
-            elif value.replace('.', '', 1).isdigit() and value.count('.') < 2:
-                value = float(value)
-            elif value.replace('e-', '', 1).isdigit() or value.replace('e+', '', 1).isdigit():
-                # Handle scientific notation
-                try:
-                    value = float(value)
-                except ValueError:
+            # Improved type conversion handling
+            try:
+                # First try converting to float (handles scientific notation)
+                converted = float(value)
+                if '.' not in value and 'e' not in value.lower():
+                    # If original value was integer-like, convert to int
+                    value = int(converted) if converted.is_integer() else converted
+                else:
+                    value = converted
+            except ValueError:
+                # Handle boolean values
+                if value.lower() == 'true':
+                    value = True
+                elif value.lower() == 'false':
+                    value = False
+                else:
+                    # Leave as string if not convertible
                     pass
             
-            # Special handling for common numerical config values
-            if key.endswith('.LR') or key.endswith('.MIN_LR') or key.endswith('.WEIGHT_DECAY'):
+            # Force float conversion for specific numerical fields
+            if any(key.endswith(x) for x in ['.LR', '.MIN_LR', '.WEIGHT_DECAY', '.GAMMA', '.STEP_SIZE']):
                 try:
                     value = float(value)
-                except ValueError:
+                except (ValueError, TypeError):
                     pass
 
             # Handle nested attributes
