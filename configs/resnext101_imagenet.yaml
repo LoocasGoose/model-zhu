@@ -1,0 +1,30 @@
+BASE: ['resnext_base.yaml']
+
+DATA:
+  DATASET: "medium_imagenet"
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  IMG_SIZE: 224
+  BATCH_SIZE: 32  # Smaller batch size due to larger model
+  NUM_WORKERS: 8
+
+MODEL:
+  NAME: "resnext101"
+  NUM_CLASSES: 200
+  DROP_RATE: 0.1
+  SMALL_INPUTS: False
+  RESNEXT:
+    CARDINALITY: 32
+    BASE_WIDTH: 4  # Standard configuration for ResNeXt101
+
+TRAIN:
+  EPOCHS: 100
+  LR: 0.03  # Slightly lower learning rate for more stable training with larger model
+  OPTIMIZER:
+    NAME: "sgd"
+    MOMENTUM: 0.9
+  LR_SCHEDULER:
+    NAME: "cosine"
+
+OUTPUT: "output/resnext101_imagenet"
+SAVE_FREQ: 5
+SEED: 42 

@@ -1,0 +1,27 @@
+DATA:
+  DATASET: "medium_imagenet"
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  IMG_SIZE: 224
+  NUM_WORKERS: 8
+  PIN_MEMORY: True
+
+MODEL:
+  NUM_CLASSES: 200
+  DROP_RATE: 0.1
+  SMALL_INPUTS: False
+
+TRAIN:
+  EPOCHS: 100
+  WARMUP_EPOCHS: 5
+  OPTIMIZER:
+    NAME: "sgd"
+    MOMENTUM: 0.9
+  LR_SCHEDULER:
+    NAME: "cosine"
+
+AUG:
+  COLOR_JITTER: 0.4
+  RAND_AUGMENT: "rand-m9-mstd0.5-inc1"
+
+SAVE_FREQ: 5
+SEED: 42 

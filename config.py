@@ -58,6 +58,12 @@ base_config.MODEL.SMALL_INPUTS = True
 # Resnet Transformer parameters
 base_config.MODEL.RESNET = CN()
 
+# ResNeXt parameters
+base_config.MODEL.RESNEXT = CN()
+# Cardinality - Number of transformation groups
+base_config.MODEL.RESNEXT.CARDINALITY = 32
+# Base width for each group
+base_config.MODEL.RESNEXT.BASE_WIDTH = 4
 
 # -----------------------------------------------------------------------------
 # Training settings

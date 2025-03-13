@@ -1,6 +1,7 @@
 from .lenet import LeNet
 from .resnet import ResNet18
 from models.alexnet import AlexNet
+from .resnext import ResNeXt29, ResNeXt50, ResNeXt101
 
 
 def build_model(config):
@@ -14,6 +15,31 @@ def build_model(config):
         model = ResNet18(num_classes=config.MODEL.NUM_CLASSES)
     elif model_type == 'alexnet':
         model = AlexNet(num_classes=config.MODEL.NUM_CLASSES)
+    elif model_type == 'resnext29':
+        # ResNeXt-29 with 16x64d configuration (optimized for CIFAR)
+        cardinality = config.MODEL.RESNEXT.CARDINALITY
+        base_width = config.MODEL.RESNEXT.BASE_WIDTH
+        # For CIFAR, we typically use different cardinality/width settings
+        if cardinality == 32 and base_width == 4:  # If using default values
+            cardinality = 16  # Better for CIFAR
+            base_width = 64   # Better for CIFAR
+        model = ResNeXt29(num_classes=config.MODEL.NUM_CLASSES, 
+                          cardinality=cardinality,
+                          base_width=base_width)
+    elif model_type == 'resnext50':
+        # ResNeXt-50 with 32x4d configuration by default
+        cardinality = config.MODEL.RESNEXT.CARDINALITY
+        base_width = config.MODEL.RESNEXT.BASE_WIDTH
+        model = ResNeXt50(num_classes=config.MODEL.NUM_CLASSES,
+                          cardinality=cardinality,
+                          base_width=base_width)
+    elif model_type == 'resnext101':
+        # ResNeXt-101 with 32x4d configuration by default
+        cardinality = config.MODEL.RESNEXT.CARDINALITY
+        base_width = config.MODEL.RESNEXT.BASE_WIDTH
+        model = ResNeXt101(num_classes=config.MODEL.NUM_CLASSES,
+                           cardinality=cardinality,
+                           base_width=base_width)
     # elif model_type == 'densenet':
     #     # Use densenet121 by default, but allow command-line override 
     #     # via the --opts feature for different model variations

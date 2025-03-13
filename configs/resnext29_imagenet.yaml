@@ -1,0 +1,27 @@
+BASE: ['resnext_base.yaml']
+
+DATA:
+  DATASET: "medium_imagenet"
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  IMG_SIZE: 224
+  BATCH_SIZE: 128  # Can use larger batch size for smaller model
+  NUM_WORKERS: 8
+
+MODEL:
+  NAME: "resnext29"
+  RESNEXT:
+    CARDINALITY: 16
+    BASE_WIDTH: 64  # Use typical values for ResNeXt29
+
+TRAIN:
+  EPOCHS: 100
+  LR: 0.05
+  OPTIMIZER:
+    NAME: "sgd"
+    MOMENTUM: 0.9
+  LR_SCHEDULER:
+    NAME: "cosine"
+
+OUTPUT: "output/resnext29_imagenet"
+SAVE_FREQ: 5
+SEED: 42 
