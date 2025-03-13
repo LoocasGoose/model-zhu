@@ -1,4 +1,3 @@
-from .build import build_model
 from .resnext import ResNeXt, ResNeXtBlock, ResNeXt29, ResNeXt50, ResNeXt101
 
 # Function to build model from config

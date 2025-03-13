@@ -63,15 +63,13 @@ def main(config):
     model = build_model(config)
     # logger.info(str(model))
 
-    # Apply channels_last memory format for better performance on NVIDIA GPUs
+    # Move model to device
     model = model.to(device)
-    model = model.to(memory_format=torch.channels_last)
-    logger.info("Using channels_last memory format for better convolution performance")
+    logger.info(f"Model moved to {device}")
 
     # param and flop counts
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     toy_input = torch.rand(1, 3, config.DATA.IMG_SIZE, config.DATA.IMG_SIZE).to(device)
-    toy_input = toy_input.to(memory_format=torch.channels_last)  # Convert input to channels_last
     flops = FlopCountAnalysis(model, toy_input)
     del toy_input
 
@@ -172,9 +170,6 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
     # Get gradient clipping value if configured
     grad_clip_val = getattr(config.TRAIN, 'GRADIENT_CLIP_VAL', 0.0)
     
-    # Get whether to use channels_last memory format
-    channels_last = getattr(config.TRAIN, 'CHANNELS_LAST', True)
-    
     optimizer.zero_grad()  # Zero gradients at the start of epoch
     
     for idx, (samples, targets) in enumerate(tqdm(data_loader, leave=False)):
@@ -184,10 +179,6 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
         # Move data to device and prefetch next batch
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
-        
-        # Convert to channels_last memory format for better performance if enabled
-        if channels_last:
-            samples = samples.contiguous(memory_format=torch.channels_last)
         
         # Use automatic mixed precision for faster computation
         if use_amp:
@@ -280,18 +271,11 @@ def validate(config, data_loader, model):
     
     # Determine whether to use mixed precision
     use_amp = getattr(config.TRAIN, 'USE_AMP', False)
-    
-    # Get whether to use channels_last memory format
-    channels_last = getattr(config.TRAIN, 'CHANNELS_LAST', True)
 
     end = time.time()
     for idx, (images, target) in enumerate(data_loader):
         images = images.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
-        
-        # Convert to channels_last memory format for better performance if enabled
-        if channels_last:
-            images = images.contiguous(memory_format=torch.channels_last)
 
         # Disable mixup for validation to save compute and get real accuracy
         # compute output with mixed precision for efficiency
@@ -335,15 +319,8 @@ def evaluate(config, data_loader, model):
     # Determine whether to use mixed precision
     use_amp = getattr(config.TRAIN, 'USE_AMP', False)
     
-    # Get whether to use channels_last memory format
-    channels_last = getattr(config.TRAIN, 'CHANNELS_LAST', True)
-    
     for idx, (images, _) in enumerate(tqdm(data_loader)):
         images = images.cuda(non_blocking=True)
-        
-        # Convert to channels_last memory format for better performance if enabled
-        if channels_last:
-            images = images.contiguous(memory_format=torch.channels_last)
         
         # Use mixed precision for inference if enabled
         if use_amp:
@@ -366,15 +343,8 @@ if __name__ == "__main__":
     np.random.seed(seed)
     random.seed(seed)  # Set random seed for reproducibility
     
-    # Set deterministic flag for more consistent results (may slightly impact performance)
-    # torch.backends.cudnn.deterministic = True
-    
     # Set faster performance flag - allow non-deterministic algorithms
     torch.backends.cudnn.benchmark = True  # This can significantly speed up training
-    
-    # Make sure to enable TF32 for Ampere GPUs (RTX 30 series or higher)
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
 
     # Make output dir
     os.makedirs(config.OUTPUT, exist_ok=True)

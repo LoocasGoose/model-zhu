@@ -32,7 +32,6 @@ TRAIN:
   GRADIENT_ACCUMULATION_STEPS: 1  # No need for gradient accumulation
   USE_AMP: True  # Enable Automatic Mixed Precision training
   GRADIENT_CLIP_VAL: 1.0  # Add gradient clipping for stability
-  CHANNELS_LAST: True  # Enable channels_last memory format for better performance
 
 OUTPUT: "output/resnext29_imagenet"
 SAVE_FREQ: 5
