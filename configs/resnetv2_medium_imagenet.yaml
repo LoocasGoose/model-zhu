@@ -14,7 +14,7 @@ MODEL:
 TRAIN:
   EPOCHS: 30
   WARMUP_EPOCHS: 3
-  LR: 5e-4
+  LR: 0.0005
   MIN_LR: 5e-5
   LR_SCHEDULER:
     NAME: "warmup_cosine"  # Use warmup cosine schedule
