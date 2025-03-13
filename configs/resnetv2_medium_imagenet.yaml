@@ -21,3 +21,5 @@ TRAIN:
 OUTPUT: "output/resnetv2_medium_imagenet"
 SAVE_FREQ: 1
 PRINT_FREQ: 50 
+
+
