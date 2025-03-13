@@ -6,6 +6,7 @@ DATA:
   IMG_SIZE: 224
   BATCH_SIZE: 128  # Can use larger batch size for smaller model
   NUM_WORKERS: 8
+  PREFETCH_FACTOR: 1
 
 MODEL:
   NAME: "resnext29"
