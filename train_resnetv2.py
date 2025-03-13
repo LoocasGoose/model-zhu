@@ -105,6 +105,19 @@ def update_config_from_opts(config, opts):
                 value = int(value)
             elif value.replace('.', '', 1).isdigit() and value.count('.') < 2:
                 value = float(value)
+            elif value.replace('e-', '', 1).isdigit() or value.replace('e+', '', 1).isdigit():
+                # Handle scientific notation
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+            
+            # Special handling for common numerical config values
+            if key.endswith('.LR') or key.endswith('.MIN_LR') or key.endswith('.WEIGHT_DECAY'):
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
 
             # Handle nested attributes
             keys = key.split('.')
