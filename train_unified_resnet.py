@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Highly optimized training script for ResNet models.
-Includes all performance optimizations for training larger models like ResNet50.
+Unified ResNet training script.
+Supports both original ResNet models from resnet.py and optimized models from resnetv2.py
+with all performance optimizations for efficient training.
 """
 import os
 import argparse
@@ -20,7 +21,9 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from timm.utils.metrics import AverageMeter, accuracy
 from tqdm import tqdm
+import logging
 
+# Import models
 from models.resnet import ResNet18
 from models.resnetv2 import resnet50, resnet18
 from data import build_loader
@@ -29,27 +32,82 @@ from utils import create_logger, load_checkpoint, save_checkpoint
 
 
 def parse_args():
-    parser = argparse.ArgumentParser("Optimized ResNet training script")
+    parser = argparse.ArgumentParser("Unified ResNet training script")
     parser.add_argument("--cfg", type=str, required=True, help="Path to config file")
-    parser.add_argument("--model", type=str, default="resnet50", help="Model type: resnet18, resnet50")
+    
+    # Model selection
+    parser.add_argument("--model-type", type=str, default="resnetv2", 
+                        choices=["resnet", "resnetv2"], 
+                        help="Model architecture type")
+    parser.add_argument("--model-variant", type=str, default="resnet50", 
+                        choices=["resnet18", "resnet50"], 
+                        help="Model size/variant")
+    
+    # Training parameters
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (overrides config)")
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs (overrides config)")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (overrides config)")
     parser.add_argument("--output", type=str, default=None, help="Output directory (overrides config)")
     parser.add_argument("--workers", type=int, default=16, help="Number of data loading workers")
+    
+    # Optimization options
     parser.add_argument("--validate-freq", type=int, default=5, help="Validate every N epochs")
     parser.add_argument("--grad-accum-steps", type=int, default=1, help="Gradient accumulation steps")
     parser.add_argument("--no-amp", action="store_true", help="Disable mixed precision training")
     parser.add_argument("--no-checkpoint", action="store_true", help="Disable gradient checkpointing")
+    
+    # Other options
     parser.add_argument("--resume", type=str, default="", help="Resume from checkpoint")
     parser.add_argument("--eval", action="store_true", help="Evaluate only")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID")
     parser.add_argument("--opts", nargs="+", help="Modify config options using KEY VALUE pairs")
+    
     return parser.parse_args()
 
 
-def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device, config, scaler=None):
+def build_model(args, config):
+    """Build the appropriate model based on args and config"""
+    num_classes = config.MODEL.NUM_CLASSES if hasattr(config.MODEL, 'NUM_CLASSES') else 200
+    
+    if args.model_type == "resnet":
+        # Original ResNet from resnet.py
+        if args.model_variant == "resnet18":
+            model = ResNet18(
+                num_classes=num_classes,
+                enable_checkpoint=not args.no_checkpoint
+            )
+        else:
+            raise ValueError(f"Model variant {args.model_variant} not supported for original ResNet")
+    else:
+        # ResNetV2 from resnetv2.py
+        if args.model_variant == "resnet18":
+            model = resnet18(
+                num_classes=num_classes,
+                zero_init_residual=getattr(config.MODEL, 'ZERO_INIT_RESIDUAL', True),
+                use_se=getattr(config.MODEL, 'USE_SE', False),
+                dropout_rate=getattr(config.MODEL, 'DROP_RATE', 0.0)
+            )
+        elif args.model_variant == "resnet50":
+            model = resnet50(
+                num_classes=num_classes,
+                zero_init_residual=getattr(config.MODEL, 'ZERO_INIT_RESIDUAL', True),
+                use_se=getattr(config.MODEL, 'USE_SE', False),
+                dropout_rate=getattr(config.MODEL, 'DROP_RATE', 0.0)
+            )
+        else:
+            raise ValueError(f"Unknown model variant: {args.model_variant}")
+        
+        # Enable gradient checkpointing for ResNetV2 if requested
+        if not args.no_checkpoint:
+            for layer in [model.layer1, model.layer2, model.layer3, model.layer4]:
+                for block in layer:
+                    setattr(block, 'use_checkpoint', True)
+    
+    return model
+
+
+def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device, config, logger, scaler=None):
     """Optimized training function for one epoch"""
     model.train()
     
@@ -153,14 +211,14 @@ def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device, co
     
     # Log epoch stats
     epoch_time = time.time() - start_time
-    print(f"Epoch {epoch} - Train Loss: {loss_meter.avg:.4f}, Acc: {acc1_meter.avg:.2f}%, "
+    logger.info(f"Epoch {epoch} - Train Loss: {loss_meter.avg:.4f}, Acc: {acc1_meter.avg:.2f}%, "
           f"Time: {datetime.timedelta(seconds=int(epoch_time))}")
     
     return loss_meter.avg, acc1_meter.avg
 
 
 @torch.no_grad()
-def validate(model, val_loader, criterion, device, use_amp=False):
+def validate(model, val_loader, criterion, device, logger, use_amp=False):
     """Optimized validation function"""
     model.eval()
     
@@ -198,7 +256,7 @@ def validate(model, val_loader, criterion, device, use_amp=False):
             'acc': f'{acc1_meter.avg:.2f}%'
         })
     
-    print(f"Validation - Loss: {loss_meter.avg:.4f}, Acc: {acc1_meter.avg:.2f}%")
+    logger.info(f"Validation - Loss: {loss_meter.avg:.4f}, Acc: {acc1_meter.avg:.2f}%")
     return loss_meter.avg, acc1_meter.avg
 
 
@@ -234,8 +292,13 @@ def main():
     config.use_checkpoint = not args.no_checkpoint
     config.validate_freq = args.validate_freq
     config.grad_accum_steps = args.grad_accum_steps
-    config.grad_clip_val = 1.0  # Default gradient clipping value
+    config.grad_clip_val = getattr(config.MEMORY, 'GRAD_CLIP_NORM', 1.0) if hasattr(config, 'MEMORY') else 1.0
     config.epochs = config.TRAIN.EPOCHS
+    
+    # Ensure output directory includes model type
+    if config.OUTPUT:
+        model_dir = f"{args.model_type}_{args.model_variant}"
+        config.OUTPUT = os.path.join(config.OUTPUT, model_dir)
     
     # Set device
     device = torch.device(f'cuda:{args.gpu}' if torch.cuda.is_available() else 'cpu')
@@ -243,7 +306,7 @@ def main():
     
     # Create output directory
     os.makedirs(config.OUTPUT, exist_ok=True)
-    logger = create_logger(output_dir=config.OUTPUT, name=f"{args.model}")
+    logger = create_logger(output_dir=config.OUTPUT, name=f"{args.model_type}_{args.model_variant}")
     
     # Save config
     config_path = os.path.join(config.OUTPUT, "config.yaml")
@@ -260,33 +323,13 @@ def main():
     data_loader_train.pin_memory = True
     data_loader_val.pin_memory = True
     
-    # Create model based on argument
-    if args.model == "resnet18":
-        if config.use_checkpoint:
-            model = ResNet18(num_classes=config.MODEL.NUM_CLASSES, enable_checkpoint=True)
-        else:
-            model = ResNet18(num_classes=config.MODEL.NUM_CLASSES)
-    elif args.model == "resnet50":
-        model = resnet50(
-            num_classes=config.MODEL.NUM_CLASSES,
-            zero_init_residual=True,
-            use_se=False,  # Disable SE blocks for speed
-            dropout_rate=getattr(config.MODEL, 'DROP_RATE', 0.0)
-        )
-        # Enable gradient checkpointing for ResNet50 if requested
-        if config.use_checkpoint:
-            for layer in [model.layer1, model.layer2, model.layer3, model.layer4]:
-                for block in layer:
-                    setattr(block, 'use_checkpoint', True)
-    else:
-        raise ValueError(f"Unsupported model: {args.model}")
-    
-    # Move model to device
+    # Build the model
+    model = build_model(args, config)
     model = model.to(device)
     
     # Print model info
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"Model: {args.model}, Parameters: {n_parameters/1e6:.2f}M")
+    logger.info(f"Model: {args.model_type}_{args.model_variant}, Parameters: {n_parameters/1e6:.2f}M")
     
     # Create optimizer
     if config.TRAIN.OPTIMIZER.NAME.lower() == "sgd":
@@ -295,7 +338,7 @@ def main():
             lr=config.TRAIN.LR,
             momentum=config.TRAIN.OPTIMIZER.MOMENTUM,
             weight_decay=config.TRAIN.OPTIMIZER.WEIGHT_DECAY,
-            nesterov=True
+            nesterov=getattr(config.TRAIN.OPTIMIZER, 'NESTEROV', True)
         )
     elif config.TRAIN.OPTIMIZER.NAME.lower() == "adam":
         optimizer = optim.Adam(
@@ -313,10 +356,11 @@ def main():
         raise ValueError(f"Unsupported optimizer: {config.TRAIN.OPTIMIZER.NAME}")
     
     # Create learning rate scheduler
+    min_lr = config.TRAIN.MIN_LR if hasattr(config.TRAIN, 'MIN_LR') else 0
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
         T_max=config.TRAIN.EPOCHS,
-        eta_min=config.TRAIN.MIN_LR if hasattr(config.TRAIN, 'MIN_LR') else 0
+        eta_min=min_lr
     )
     
     # Create loss function
@@ -329,17 +373,21 @@ def main():
     start_epoch = 0
     best_acc = 0
     if args.resume:
-        checkpoint = torch.load(args.resume, map_location=device)
-        model.load_state_dict(checkpoint['model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        scheduler.load_state_dict(checkpoint['scheduler'])
-        start_epoch = checkpoint['epoch'] + 1
-        best_acc = checkpoint.get('best_acc', 0)
-        logger.info(f"Resumed from epoch {start_epoch-1} with accuracy {best_acc:.2f}%")
+        try:
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint['model'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            scheduler.load_state_dict(checkpoint['scheduler'])
+            start_epoch = checkpoint['epoch'] + 1
+            best_acc = checkpoint.get('best_acc', 0)
+            logger.info(f"Resumed from epoch {start_epoch-1} with accuracy {best_acc:.2f}%")
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            logger.info("Starting from scratch")
     
     # Evaluate only if specified
     if args.eval:
-        val_loss, val_acc = validate(model, data_loader_val, criterion, device, config.use_amp)
+        val_loss, val_acc = validate(model, data_loader_val, criterion, device, logger, config.use_amp)
         logger.info(f"Evaluation - Loss: {val_loss:.4f}, Acc: {val_acc:.2f}%")
         return
     
@@ -349,15 +397,20 @@ def main():
     logger.info(f"Effective batch size: {config.DATA.BATCH_SIZE * config.grad_accum_steps}")
     logger.info(f"Mixed precision: {config.use_amp}, Gradient checkpointing: {config.use_checkpoint}")
     
+    # Get save frequency from config
+    save_freq = config.SAVE_FREQ if hasattr(config, 'SAVE_FREQ') else 10
+    if hasattr(config, 'MEMORY') and hasattr(config.MEMORY, 'SAVE_FREQ'):
+        save_freq = config.MEMORY.SAVE_FREQ
+    
     for epoch in range(start_epoch, config.epochs):
         # Train one epoch
         train_loss, train_acc = train_one_epoch(
-            model, data_loader_train, criterion, optimizer, epoch, device, config, scaler
+            model, data_loader_train, criterion, optimizer, epoch, device, config, logger, scaler
         )
         
         # Validate if needed
         if epoch % config.validate_freq == 0 or epoch == config.epochs - 1:
-            val_loss, val_acc = validate(model, data_loader_val, criterion, device, config.use_amp)
+            val_loss, val_acc = validate(model, data_loader_val, criterion, device, logger, config.use_amp)
             
             # Update best accuracy
             is_best = val_acc > best_acc
@@ -372,7 +425,7 @@ def main():
         scheduler.step()
         
         # Save checkpoint
-        if epoch % config.SAVE_FREQ == 0 or epoch == config.epochs - 1 or is_best:
+        if epoch % save_freq == 0 or epoch == config.epochs - 1 or is_best:
             checkpoint = {
                 'epoch': epoch,
                 'model': model.state_dict(),
@@ -413,4 +466,3 @@ def main():
 
 if __name__ == "__main__":
     main() 
-
