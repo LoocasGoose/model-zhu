@@ -1,0 +1,24 @@
+BASE: ['resnetv2_base.yaml']
+DATA:
+  BATCH_SIZE: 128  # Larger batch size for better throughput on 11GB VRAM
+  DATASET: "medium_imagenet"
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  IMG_SIZE: 96
+  NUM_WORKERS: 4
+  PIN_MEMORY: True
+MODEL:
+  NUM_CLASSES: 200
+  VARIANT: "resnet18"  # Lightweight model
+  USE_SE: False  # Disable SE blocks for faster computation
+  DROP_RATE: 0.0  # Disable dropout for faster computation
+  ZERO_INIT_RESIDUAL: True
+TRAIN:
+  EPOCHS: 30
+  WARMUP_EPOCHS: 3
+  LR: 5e-4
+  MIN_LR: 5e-5
+  LR_SCHEDULER:
+    NAME: "warmup_cosine"  # Good balance of performance and training speed
+OUTPUT: "output/resnetv2_lightweight"
+SAVE_FREQ: 5
+PRINT_FREQ: 50 
