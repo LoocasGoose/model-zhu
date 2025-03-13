@@ -97,13 +97,13 @@ def main(config):
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
         train_acc1, train_loss = train_one_epoch(config, model, criterion, data_loader_train, optimizer, epoch, scaler)
         logger.info(f" * Train Acc {train_acc1:.3f} Train Loss {train_loss:.3f}")
-        logger.info(f"Accuracy of the network on the {len(dataset_train)} train images: {train_acc1:.1f}%")
+        logger.info(f"Accuracy of the network on the {len(dataset_train)} train images ----->: {train_acc1:.1f}%")
 
         # Only validate every 5 epochs to speed up training, except for the last epoch
         if epoch % 5 == 0 or epoch == (config.TRAIN.EPOCHS - 1):
             val_acc1, val_loss = validate(config, data_loader_val, model)
             logger.info(f" * Val Acc {val_acc1:.3f} Val Loss {val_loss:.3f}")
-            logger.info(f"Accuracy of the network on the {len(dataset_val)} val images: {val_acc1:.1f}%")
+            logger.info(f"Accuracy of the network on the {len(dataset_val)} val images ----->>>: {val_acc1:.1f}%")
             
             # Update max_accuracy
             max_accuracy = max(max_accuracy, val_acc1)
