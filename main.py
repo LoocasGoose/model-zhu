@@ -4,6 +4,8 @@ import json
 import os
 import shutil
 import time
+import contextlib  # For nullcontext
+import random  # For reproducibility
 
 import numpy as np
 import torch
@@ -169,11 +171,11 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
         targets = targets.cuda(non_blocking=True)
         
         # Use automatic mixed precision for faster computation
-        with autocast() if use_amp else contextlib.nullcontext():
-            outputs = model(samples)
-            loss = criterion(outputs, targets) / accumulation_steps  # Scale loss by accumulation steps
-        
         if use_amp:
+            with autocast():
+                outputs = model(samples)
+                loss = criterion(outputs, targets) / accumulation_steps  # Scale loss by accumulation steps
+                
             # Scale gradients and perform backward pass
             scaler.scale(loss).backward()
             
@@ -183,6 +185,10 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
                 scaler.update()
                 optimizer.zero_grad()
         else:
+            # Standard forward/backward pass without mixed precision
+            outputs = model(samples)
+            loss = criterion(outputs, targets) / accumulation_steps  # Scale loss by accumulation steps
+            
             # Standard backward pass without mixed precision
             loss.backward()
             
@@ -234,7 +240,11 @@ def validate(config, data_loader, model):
         target = target.cuda(non_blocking=True)
 
         # compute output with mixed precision for efficiency
-        with autocast() if use_amp else contextlib.nullcontext():
+        if use_amp:
+            with autocast():
+                output = model(images)
+                loss = criterion(output, target)
+        else:
             output = model(images)
             loss = criterion(output, target)
 
@@ -271,7 +281,10 @@ def evaluate(config, data_loader, model):
         images = images.cuda(non_blocking=True)
         
         # Use mixed precision for inference if enabled
-        with autocast() if use_amp else contextlib.nullcontext():
+        if use_amp:
+            with autocast():
+                output = model(images)
+        else:
             output = model(images)
             
         preds.append(output.cpu().numpy())
@@ -280,15 +293,13 @@ def evaluate(config, data_loader, model):
 
 
 if __name__ == "__main__":
-    import contextlib  # For nullcontext
-
     args, config = parse_option()
 
     seed = config.SEED
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     np.random.seed(seed)
-    # random.seed(seed)
+    random.seed(seed)  # Set random seed for reproducibility
 
     # Make output dir
     os.makedirs(config.OUTPUT, exist_ok=True)

@@ -39,6 +39,10 @@ base_config.DATA.PIN_MEMORY = True
 base_config.DATA.NUM_WORKERS = 8
 # Fraction of training data to use (1.0 means use all data, 0.1 means use 10% of the data)
 base_config.DATA.SUBSET_FRACTION = 1.0
+# Prefetch factor for data loading
+base_config.DATA.PREFETCH_FACTOR = 2
+# Whether to use persistent workers
+base_config.DATA.PERSISTENT_WORKERS = True
 
 # -----------------------------------------------------------------------------
 # Model settings
@@ -64,6 +68,12 @@ base_config.MODEL.RESNEXT = CN()
 base_config.MODEL.RESNEXT.CARDINALITY = 32
 # Base width for each group
 base_config.MODEL.RESNEXT.BASE_WIDTH = 4
+# Channel pruning rate (1.0 means no pruning)
+base_config.MODEL.RESNEXT.PRUNING_RATE = 1.0
+# Activation function to use (relu, relu6, silu)
+base_config.MODEL.RESNEXT.ACTIVATION = "relu"
+# Whether to use gradient checkpointing
+base_config.MODEL.RESNEXT.USE_CHECKPOINT = False
 
 # -----------------------------------------------------------------------------
 # Training settings
@@ -79,6 +89,12 @@ base_config.TRAIN.WARMUP_LR = 5e-4
 # Gradient accumulation steps
 # could be overwritten by command line argument
 base_config.TRAIN.ACCUMULATION_STEPS = 1
+# Gradient accumulation steps for larger effective batch size
+base_config.TRAIN.GRADIENT_ACCUMULATION_STEPS = 1
+# Whether to use automatic mixed precision training
+base_config.TRAIN.USE_AMP = False
+# Mixed precision optimization level
+base_config.TRAIN.OPT_LEVEL = "O1"
 
 # LR scheduler
 base_config.TRAIN.LR_SCHEDULER = CN()
