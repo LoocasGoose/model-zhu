@@ -6,6 +6,10 @@ from PIL import Image, ImageFile
 from torch.utils.data import Dataset, Subset
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, ImageFolder
+import os
+import numpy as np
+import torch.utils.data as data
+from torchvision import datasets
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -171,3 +175,173 @@ class CIFAR10Dataset(Dataset):
                 ]
         
         return transforms.Compose(transform)
+
+
+class MediumImageNetDataset(data.Dataset):
+    """
+    Dataset class for Medium ImageNet dataset stored in HDF5 format.
+    
+    Args:
+        file_path (str): Path to the HDF5 file
+        transform (callable, optional): Optional transform to be applied on a sample
+        split (str): Which split to use ('train', 'val', or 'test')
+    """
+    def __init__(self, file_path, transform=None, split='train'):
+        self.file_path = file_path
+        self.transform = transform
+        self.split = split
+        
+        # Open the HDF5 file for inspection (don't keep it open)
+        with h5py.File(self.file_path, 'r') as f:
+            self.length = len(f[f'{split}_labels'])
+            
+        # Class names will be initialized on first access
+        self._class_names = None
+        
+    def __len__(self):
+        return self.length
+    
+    def __getitem__(self, idx):
+        # Open file in read mode
+        with h5py.File(self.file_path, 'r') as f:
+            # Read image data as a numpy array
+            img = f[f'{self.split}_images'][idx]
+            # Read label
+            label = f[f'{self.split}_labels'][idx]
+            
+        # Convert numpy array to PIL Image
+        img = Image.fromarray(img)
+        
+        # Apply transformations if available
+        if self.transform:
+            img = self.transform(img)
+            
+        return img, label
+    
+    @property
+    def class_names(self):
+        # Lazy loading of class names
+        if self._class_names is None:
+            with h5py.File(self.file_path, 'r') as f:
+                # Assuming class names are stored in the HDF5 file
+                # If not, you can load them from elsewhere
+                if 'class_names' in f:
+                    self._class_names = [name.decode('utf-8') for name in f['class_names'][:]]
+                else:
+                    # Default to generic class names if not available
+                    self._class_names = [f'Class {i}' for i in range(200)]
+        
+        return self._class_names
+
+
+def build_transform(is_train, img_size, color_jitter=0.4):
+    """
+    Build transformation pipeline for training or validation.
+    
+    Args:
+        is_train (bool): Whether to build transformations for training
+        img_size (int): Size of the input image
+        color_jitter (float): Strength of color jittering
+        
+    Returns:
+        transform (callable): Transformation pipeline
+    """
+    if is_train:
+        transform = transforms.Compose([
+            transforms.RandomResizedCrop(img_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(
+                brightness=color_jitter,
+                contrast=color_jitter,
+                saturation=color_jitter,
+                hue=color_jitter/2
+            ),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    else:
+        transform = transforms.Compose([
+            transforms.Resize(int(img_size * 1.14)),  # 14% larger for validation
+            transforms.CenterCrop(img_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    
+    return transform
+
+
+def build_dataset(config, is_train):
+    """
+    Build dataset based on config.
+    
+    Args:
+        config (dict): Configuration dictionary
+        is_train (bool): Whether to build dataset for training
+        
+    Returns:
+        dataset (Dataset): Dataset object
+    """
+    img_size = config.DATA.IMG_SIZE
+    color_jitter = config.AUG.COLOR_JITTER if hasattr(config.AUG, 'COLOR_JITTER') else 0.4
+    transform = build_transform(is_train, img_size, color_jitter)
+    
+    if config.DATA.DATASET == 'cifar10':
+        dataset = datasets.CIFAR10(
+            root='./data',
+            train=is_train,
+            download=True,
+            transform=transform
+        )
+    elif config.DATA.DATASET == 'cifar100':
+        dataset = datasets.CIFAR100(
+            root='./data',
+            train=is_train,
+            download=True,
+            transform=transform
+        )
+    elif config.DATA.DATASET == 'medium_imagenet':
+        split = 'train' if is_train else 'val'
+        dataset = MediumImageNetDataset(
+            file_path=config.DATA.MEDIUM_IMAGENET_PATH,
+            transform=transform,
+            split=split
+        )
+    else:
+        raise ValueError(f"Unsupported dataset: {config.DATA.DATASET}")
+    
+    return dataset
+
+
+def build_dataloader(config, is_train):
+    """
+    Build dataloader based on config.
+    
+    Args:
+        config (dict): Configuration dictionary
+        is_train (bool): Whether to build dataloader for training
+        
+    Returns:
+        dataloader (DataLoader): DataLoader object
+    """
+    dataset = build_dataset(config, is_train)
+    
+    if is_train:
+        batch_size = config.DATA.BATCH_SIZE
+        shuffle = True
+    else:
+        batch_size = 2 * config.DATA.BATCH_SIZE
+        shuffle = False
+    
+    num_workers = config.DATA.NUM_WORKERS if hasattr(config.DATA, 'NUM_WORKERS') else 4
+    pin_memory = config.DATA.PIN_MEMORY if hasattr(config.DATA, 'PIN_MEMORY') else False
+    
+    dataloader = data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        drop_last=is_train
+    )
+    
+    return dataloader
