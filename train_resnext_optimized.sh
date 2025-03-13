@@ -1,6 +1,39 @@
 #!/bin/bash
 # Optimized training script for ResNeXt models on RTX 2080
 
+# Parse arguments
+COMPILE=0
+TRACK=0
+PROFILE=0
+BATCH_SIZE=64
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --compile)
+      COMPILE=1
+      shift
+      ;;
+    --track)
+      TRACK=1
+      shift
+      ;;
+    --profile)
+      PROFILE=1
+      shift
+      ;;
+    --batch-size)
+      BATCH_SIZE="$2"
+      shift 2
+      ;;
+    *)
+      # Store all other arguments to pass to main.py
+      MAIN_ARGS="$MAIN_ARGS $1"
+      shift
+      ;;
+  esac
+done
+
 # Set environment variables for performance
 export CUDA_VISIBLE_DEVICES=0  # Use only the first GPU if there are multiple
 export OMP_NUM_THREADS=4  # Set OpenMP threads to avoid CPU oversubscription
@@ -26,33 +59,24 @@ setup_tracking() {
 start_time=$(date +%s)
 
 # Pre-compile the model with TorchScript for faster execution (if requested)
-if [ "$1" == "--compile" ]; then
+if [ $COMPILE -eq 1 ]; then
   echo "Precompiling model with TorchScript (experimental)..."
   python -c "
 import torch
 import sys
 sys.path.append('.')
-from models import ResNeXt29
+from models.resnext import ResNeXt29
 model = ResNeXt29(num_classes=200, small_input=True)
 model = model.cuda().to(memory_format=torch.channels_last)
 example = torch.rand(1, 3, 224, 224).cuda().to(memory_format=torch.channels_last)
 traced_model = torch.jit.trace(model, example)
 traced_model.save('resnext29_compiled.pt')
 "
-  shift # Remove the first argument
 fi
 
 # Create performance tracking logs if enabled
-if [ "$1" == "--track" ]; then
+if [ $TRACK -eq 1 ]; then
   setup_tracking
-  shift # Remove the first argument
-fi
-
-# Set default batch size if not provided
-batch_size=64
-if [ "$1" == "--batch-size" ] && [ -n "$2" ]; then
-  batch_size=$2
-  shift 2 # Remove the first two arguments
 fi
 
 # Determine optimal batch size based on mixed precision
@@ -63,16 +87,16 @@ if torch.cuda.is_available():
     print(f'GPU: {torch.cuda.get_device_name(0)}')
     print(f'Memory: {torch.cuda.get_device_properties(0).total_memory / 1024 / 1024 / 1024:.2f} GB')
     print(f'Compute capability: {torch.cuda.get_device_capability(0)}')
-    print(f'Using batch size: $batch_size')
+    print(f'Using batch size: $BATCH_SIZE')
 "
 
 # Run training with optimized settings
 echo "Starting optimized ResNeXt training..."
-echo "Running with batch size: $batch_size"
+echo "Running with batch size: $BATCH_SIZE"
 python main.py \
   --cfg configs/resnext29_imagenet.yaml \
-  --batch-size $batch_size \
-  $@ # Pass any additional arguments to the script
+  --batch-size $BATCH_SIZE \
+  $MAIN_ARGS # Pass any additional arguments to the script
 
 # Print training time at the end
 end_time=$(date +%s)
@@ -80,7 +104,7 @@ training_time=$((end_time - start_time))
 echo "Total training time: $training_time seconds ($(($training_time / 60)) minutes)"
 
 # Optional: Profile the training if requested
-if [ "$1" == "--profile" ]; then
+if [ $PROFILE -eq 1 ]; then
   echo "Profiling training for optimization insights..."
   python -m torch.utils.bottleneck main.py --cfg configs/resnext29_imagenet.yaml --batch-size 32
 fi 

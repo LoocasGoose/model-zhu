@@ -64,12 +64,14 @@ def main(config):
     # logger.info(str(model))
 
     # Apply channels_last memory format for better performance on NVIDIA GPUs
-    model = model.to(device).to(memory_format=torch.channels_last)
+    model = model.to(device)
+    model = model.to(memory_format=torch.channels_last)
     logger.info("Using channels_last memory format for better convolution performance")
 
     # param and flop counts
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    toy_input = torch.rand(1, 3, config.DATA.IMG_SIZE, config.DATA.IMG_SIZE).to(device).to(memory_format=torch.channels_last) # for measuring flops
+    toy_input = torch.rand(1, 3, config.DATA.IMG_SIZE, config.DATA.IMG_SIZE).to(device)
+    toy_input = toy_input.to(memory_format=torch.channels_last)  # Convert input to channels_last
     flops = FlopCountAnalysis(model, toy_input)
     del toy_input
 
