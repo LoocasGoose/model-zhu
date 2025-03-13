@@ -26,7 +26,7 @@ TRAIN:
     GAMMA: 0.1  # For step scheduler
     MAX_LR: 1e-3  # For one_cycle scheduler
   OPTIMIZER:
-    NAME: "adamw"  # Options: sgd, adam, adamw
+    NAME: "sgd"  # Options: sgd, adam, adamw
     EPS: 1e-8
     BETAS: (0.9, 0.999)
     MOMENTUM: 0.9
