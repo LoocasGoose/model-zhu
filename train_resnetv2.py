@@ -59,29 +59,20 @@ def load_config(config_file):
     with open(config_file, 'r') as f:
         config_dict = yaml.safe_load(f)
     
-    # Check if there's a BASE config to inherit from
+    config = Config()
+    
+    # Handle base config inheritance
     if 'BASE' in config_dict:
         base_configs = config_dict.pop('BASE')
-        if not isinstance(base_configs, list):
-            base_configs = [base_configs]
+        base_configs = [base_configs] if not isinstance(base_configs, list) else base_configs
         
-        # Start with an empty Config
-        config = Config()
-        
-        # Load all base configs first
         for base_config in base_configs:
             base_path = os.path.join(os.path.dirname(config_file), base_config)
             with open(base_path, 'r') as f:
-                base_dict = yaml.safe_load(f)
-                config.update(base_dict)
-        
-        # Then update with the current config
-        config.update(config_dict)
-    else:
-        # No base config, just load the current config
-        config = Config()
-        config.update(config_dict)
+                config.update(yaml.safe_load(f))
     
+    # Update with current config
+    config.update(config_dict)
     return config
 
 
@@ -137,43 +128,27 @@ def update_config_from_opts(config, opts):
 
 
 def get_model(config):
-    """
-    Create model based on config
-    
-    Args:
-        config (Config): Configuration object
-        
-    Returns:
-        model (nn.Module): ResNetV2 model
-    """
-    # Create model based on variant
+    """Create model based on config"""
     variant = config.MODEL.VARIANT
-    num_classes = config.MODEL.NUM_CLASSES
-    zero_init_residual = config.MODEL.ZERO_INIT_RESIDUAL
-    use_se = config.MODEL.USE_SE
-    drop_rate = config.MODEL.DROP_RATE
-    
     kwargs = {
-        'num_classes': num_classes,
-        'zero_init_residual': zero_init_residual,
-        'use_se': use_se,
-        'dropout_rate': drop_rate
+        'num_classes': config.MODEL.NUM_CLASSES,
+        'zero_init_residual': config.MODEL.ZERO_INIT_RESIDUAL,
+        'use_se': config.MODEL.USE_SE,
+        'dropout_rate': config.MODEL.DROP_RATE
     }
     
-    if variant == 'resnet18':
-        model = resnet18(**kwargs)
-    elif variant == 'resnet34':
-        model = resnet34(**kwargs)
-    elif variant == 'resnet50':
-        model = resnet50(**kwargs)
-    elif variant == 'resnet101':
-        model = resnet101(**kwargs)
-    elif variant == 'resnet152':
-        model = resnet152(**kwargs)
-    else:
-        raise ValueError(f"Unsupported model variant: {variant}")
+    model_dict = {
+        'resnet18': resnet18,
+        'resnet34': resnet34,
+        'resnet50': resnet50,
+        'resnet101': resnet101,
+        'resnet152': resnet152
+    }
     
-    return model
+    if variant not in model_dict:
+        raise ValueError(f"Unsupported model variant: {variant}")
+        
+    return model_dict[variant](**kwargs)
 
 
 def get_optimizer(config, model):
@@ -209,50 +184,42 @@ def get_optimizer(config, model):
 
 
 def get_lr_scheduler(config, optimizer):
-    """
-    Create learning rate scheduler based on config
-    
-    Args:
-        config (Config): Configuration object
-        optimizer (Optimizer): PyTorch optimizer
-        
-    Returns:
-        scheduler: PyTorch learning rate scheduler
-    """
+    """Create learning rate scheduler based on config"""
     scheduler_name = config.TRAIN.LR_SCHEDULER.NAME
     
-    if scheduler_name == 'cosine':
-        scheduler = optim.lr_scheduler.LambdaLR(
+    schedulers = {
+        'cosine': lambda: optim.lr_scheduler.LambdaLR(
             optimizer,
             lr_lambda=lambda epoch: cosine_annealing_lr(
                 epoch, config.TRAIN.EPOCHS, 1.0, config.TRAIN.MIN_LR / config.TRAIN.LR
             )
-        )
-    elif scheduler_name == 'step':
-        step_size = config.TRAIN.LR_SCHEDULER.STEP_SIZE
-        gamma = config.TRAIN.LR_SCHEDULER.GAMMA
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
-    elif scheduler_name == 'warmup_cosine':
-        scheduler = optim.lr_scheduler.LambdaLR(
+        ),
+        'step': lambda: optim.lr_scheduler.StepLR(
+            optimizer, 
+            step_size=config.TRAIN.LR_SCHEDULER.STEP_SIZE, 
+            gamma=config.TRAIN.LR_SCHEDULER.GAMMA
+        ),
+        'warmup_cosine': lambda: optim.lr_scheduler.LambdaLR(
             optimizer,
             lr_lambda=lambda epoch: warmup_cosine_annealing_lr(
                 epoch, config.TRAIN.EPOCHS, config.TRAIN.WARMUP_EPOCHS,
                 1.0, config.TRAIN.MIN_LR / config.TRAIN.LR
             )
-        )
-    elif scheduler_name == 'one_cycle':
-        max_lr = config.TRAIN.LR_SCHEDULER.MAX_LR
-        scheduler = optim.lr_scheduler.LambdaLR(
+        ),
+        'one_cycle': lambda: optim.lr_scheduler.LambdaLR(
             optimizer,
             lr_lambda=lambda epoch: one_cycle_lr(
-                epoch, config.TRAIN.EPOCHS, 1.0, max_lr / config.TRAIN.LR,
+                epoch, config.TRAIN.EPOCHS, 1.0, 
+                config.TRAIN.LR_SCHEDULER.MAX_LR / config.TRAIN.LR,
                 config.TRAIN.MIN_LR / config.TRAIN.LR
             )
         )
-    else:
-        raise ValueError(f"Unsupported scheduler: {scheduler_name}")
+    }
     
-    return scheduler
+    if scheduler_name not in schedulers:
+        raise ValueError(f"Unsupported scheduler: {scheduler_name}")
+        
+    return schedulers[scheduler_name]()
 
 
 def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, device, writer):
@@ -375,28 +342,14 @@ def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, de
 
 
 def validate(model, val_loader, epoch, config, device, writer):
-    """
-    Validate model on validation set
-    
-    Args:
-        model (nn.Module): Model to validate
-        val_loader (DataLoader): Validation data loader
-        epoch (int): Current epoch
-        config (Config): Configuration object
-        device (torch.device): Device to validate on
-        writer (SummaryWriter): TensorBoard writer
-        
-    Returns:
-        val_loss (float): Validation loss
-        val_acc (float): Validation accuracy
-    """
+    """Validate model on validation set"""
     model.eval()
     val_loss = 0
     correct = 0
     total = 0
     
     with torch.no_grad():
-        for batch_idx, (inputs, targets) in enumerate(val_loader):
+        for inputs, targets in val_loader:
             inputs, targets = inputs.to(device), targets.to(device)
             
             outputs = model(inputs)
@@ -407,11 +360,10 @@ def validate(model, val_loader, epoch, config, device, writer):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
     
-    # Calculate average metrics
+    # Calculate and log metrics
     val_loss /= len(val_loader)
     val_acc = 100. * correct / total
     
-    # Update TensorBoard
     writer.add_scalar('val/loss', val_loss, epoch)
     writer.add_scalar('val/acc', val_acc, epoch)
     
@@ -428,51 +380,36 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     
-    # Load config and apply overrides
+    # Load and update config
     config = load_config(args.cfg)
     config = update_config_from_opts(config, args.opts)
-    
-    # Override output directory if specified
     if args.output:
         config.OUTPUT = args.output
     
-    # Create output directory
+    # Create output directory and setup
     output_dir = Path(config.OUTPUT)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Set device
     device = torch.device(f'cuda:{args.gpu}' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
-    # Create TensorBoard writer
+    # Create TensorBoard writer and save config
     writer = SummaryWriter(log_dir=str(output_dir / 'tensorboard'))
-    
-    # Save config
     with open(output_dir / 'config.yaml', 'w') as f:
         yaml.dump(vars(config), f)
     
-    # Create model
-    model = get_model(config)
-    model = model.to(device)
+    # Create model, datasets, dataloaders, optimizer and scheduler
+    model = get_model(config).to(device)
+    print(f"Model: {config.MODEL.VARIANT}, Classes: {config.MODEL.NUM_CLASSES}")
     
-    # Print model information
-    model_variant = config.MODEL.VARIANT
-    num_classes = config.MODEL.NUM_CLASSES
-    print(f"Model: {model_variant}, Num classes: {num_classes}")
-    
-    # Create datasets
     img_size = config.DATA.IMG_SIZE
     train_dataset = MediumImagenetHDF5Dataset(
-        img_size=img_size,
-        split='train',
-        filepath=config.DATA.MEDIUM_IMAGENET_PATH,
-        augment=True,
+        img_size=img_size, split='train', 
+        filepath=config.DATA.MEDIUM_IMAGENET_PATH, augment=True
     )
     val_dataset = MediumImagenetHDF5Dataset(
-        img_size=img_size,
-        split='val',
-        filepath=config.DATA.MEDIUM_IMAGENET_PATH,
-        augment=False,
+        img_size=img_size, split='val',
+        filepath=config.DATA.MEDIUM_IMAGENET_PATH, augment=False
     )
     
     # Create dataloaders
