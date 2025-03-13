@@ -13,6 +13,13 @@ def build_model(config):
     """
     model_type = config.MODEL.NAME
     
+    # Set default values for parameters that might not exist in all config files
+    drop_rate = 0.0
+    if hasattr(config.MODEL.RESNEXT, 'DROP_RATE'):
+        drop_rate = config.MODEL.RESNEXT.DROP_RATE
+    elif hasattr(config.MODEL, 'DROP_RATE'):  # Fallback to the old location
+        drop_rate = config.MODEL.DROP_RATE
+    
     if model_type == "resnext29":
         model = ResNeXt29(
             num_classes=config.DATA.NUM_CLASSES if hasattr(config.DATA, 'NUM_CLASSES') else 200,
@@ -21,7 +28,7 @@ def build_model(config):
             pruning_rate=config.MODEL.RESNEXT.PRUNING_RATE,
             activation=config.MODEL.RESNEXT.ACTIVATION,
             use_checkpoint=config.MODEL.RESNEXT.USE_CHECKPOINT,
-            drop_rate=config.MODEL.RESNEXT.DROP_RATE if hasattr(config.MODEL.RESNEXT, 'DROP_RATE') else 0.0,
+            drop_rate=drop_rate,
             small_input=getattr(config.DATA, 'SMALL_INPUT', True)
         )
     elif model_type == "resnext50":
@@ -32,7 +39,7 @@ def build_model(config):
             pruning_rate=config.MODEL.RESNEXT.PRUNING_RATE,
             activation=config.MODEL.RESNEXT.ACTIVATION,
             use_checkpoint=config.MODEL.RESNEXT.USE_CHECKPOINT,
-            drop_rate=config.MODEL.RESNEXT.DROP_RATE if hasattr(config.MODEL.RESNEXT, 'DROP_RATE') else 0.0,
+            drop_rate=drop_rate,
             small_input=getattr(config.DATA, 'SMALL_INPUT', False)
         )
     elif model_type == "resnext101":
@@ -43,7 +50,7 @@ def build_model(config):
             pruning_rate=config.MODEL.RESNEXT.PRUNING_RATE,
             activation=config.MODEL.RESNEXT.ACTIVATION,
             use_checkpoint=config.MODEL.RESNEXT.USE_CHECKPOINT,
-            drop_rate=config.MODEL.RESNEXT.DROP_RATE if hasattr(config.MODEL.RESNEXT, 'DROP_RATE') else 0.0,
+            drop_rate=drop_rate,
             small_input=getattr(config.DATA, 'SMALL_INPUT', False)
         )
     else:

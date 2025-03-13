@@ -9,7 +9,6 @@ DATA:
 
 MODEL:
   NUM_CLASSES: 200
-  DROP_RATE: 0.1
   SMALL_INPUTS: False
   RESNEXT:
     CARDINALITY: 32
@@ -17,6 +16,7 @@ MODEL:
     PRUNING_RATE: 1.0  # Default: No pruning, override in model-specific config
     ACTIVATION: "relu"  # Options: relu, relu6, silu
     USE_CHECKPOINT: False  # Default: No checkpoint, override for larger models
+    DROP_RATE: 0.1  # Moved from MODEL to MODEL.RESNEXT
 
 TRAIN:
   EPOCHS: 100
