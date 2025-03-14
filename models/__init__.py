@@ -1,65 +1,70 @@
-from .resnext import ResNeXt, ResNeXtBlock, ResNeXt29, ResNeXt50, ResNeXt101
 from .resnet import ResNet18
+import torch.nn as nn
 
 # Function to build model from config
 def build_model(config):
     """
-    Build the specific model based on configuration.
+    Build model based on configuration
     
     Args:
-        config: Configuration object that contains model specifications
+        config: Configuration object with model specifications
         
     Returns:
-        Instantiated model
+        model: Instantiated model
     """
     model_type = config.MODEL.NAME
     
-    # Set default values for parameters that might not exist in all config files
-    drop_rate = 0.0
-    if hasattr(config.MODEL, 'RESNEXT') and hasattr(config.MODEL.RESNEXT, 'DROP_RATE'):
-        drop_rate = config.MODEL.RESNEXT.DROP_RATE
-    elif hasattr(config.MODEL, 'DROP_RATE'):  # Fallback to the old location
-        drop_rate = config.MODEL.DROP_RATE
-    
-    if model_type == "resnet18":
+    if model_type == 'resnet18':
+        # Check if we should enable gradient checkpointing
+        enable_checkpoint = getattr(config, 'ENABLE_CHECKPOINT', False)
+        # Create ResNet18 model
         model = ResNet18(
-            num_classes=config.MODEL.NUM_CLASSES if hasattr(config.MODEL, 'NUM_CLASSES') else 
-                       (config.DATA.NUM_CLASSES if hasattr(config.DATA, 'NUM_CLASSES') else 200)
+            num_classes=config.MODEL.NUM_CLASSES,
+            enable_checkpoint=enable_checkpoint
         )
-    elif model_type == "resnext29":
-        model = ResNeXt29(
-            num_classes=config.DATA.NUM_CLASSES if hasattr(config.DATA, 'NUM_CLASSES') else 200,
-            cardinality=config.MODEL.RESNEXT.CARDINALITY,
-            base_width=config.MODEL.RESNEXT.BASE_WIDTH,
-            pruning_rate=config.MODEL.RESNEXT.PRUNING_RATE,
-            activation=config.MODEL.RESNEXT.ACTIVATION,
-            use_checkpoint=config.MODEL.RESNEXT.USE_CHECKPOINT,
-            drop_rate=drop_rate,
-            small_input=getattr(config.DATA, 'SMALL_INPUT', True)
+    elif model_type == 'alexnet':
+        # Simple AlexNet implementation
+        model = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.AdaptiveAvgPool2d((6, 6)),
+            nn.Flatten(),
+            nn.Dropout(),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, config.MODEL.NUM_CLASSES),
         )
-    elif model_type == "resnext50":
-        model = ResNeXt50(
-            num_classes=config.DATA.NUM_CLASSES if hasattr(config.DATA, 'NUM_CLASSES') else 200,
-            cardinality=config.MODEL.RESNEXT.CARDINALITY,
-            base_width=config.MODEL.RESNEXT.BASE_WIDTH,
-            pruning_rate=config.MODEL.RESNEXT.PRUNING_RATE,
-            activation=config.MODEL.RESNEXT.ACTIVATION,
-            use_checkpoint=config.MODEL.RESNEXT.USE_CHECKPOINT,
-            drop_rate=drop_rate,
-            small_input=getattr(config.DATA, 'SMALL_INPUT', False)
-        )
-    elif model_type == "resnext101":
-        model = ResNeXt101(
-            num_classes=config.DATA.NUM_CLASSES if hasattr(config.DATA, 'NUM_CLASSES') else 200,
-            cardinality=config.MODEL.RESNEXT.CARDINALITY,
-            base_width=config.MODEL.RESNEXT.BASE_WIDTH,
-            pruning_rate=config.MODEL.RESNEXT.PRUNING_RATE,
-            activation=config.MODEL.RESNEXT.ACTIVATION,
-            use_checkpoint=config.MODEL.RESNEXT.USE_CHECKPOINT,
-            drop_rate=drop_rate,
-            small_input=getattr(config.DATA, 'SMALL_INPUT', False)
+    elif model_type == 'lenet':
+        # Simple LeNet implementation
+        model = nn.Sequential(
+            nn.Conv2d(3, 6, kernel_size=5),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(6, 16, kernel_size=5),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Flatten(),
+            nn.Linear(16 * ((config.DATA.IMG_SIZE - 8) // 4) ** 2, 120),
+            nn.ReLU(inplace=True),
+            nn.Linear(120, 84),
+            nn.ReLU(inplace=True),
+            nn.Linear(84, config.MODEL.NUM_CLASSES),
         )
     else:
-        raise ValueError(f"Unknown model type: {model_type}")
+        raise ValueError(f"Model type {model_type} not supported")
     
     return model
