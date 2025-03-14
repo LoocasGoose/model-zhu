@@ -51,6 +51,37 @@ def parse_option():
     args = parser.parse_args()
 
     config = get_config(args)
+    
+    # Ensure command line args are properly set in config
+    # Mixed precision training
+    if args.use_amp:
+        if not hasattr(config.TRAIN, 'USE_AMP'):
+            # If the attribute doesn't exist in config, add it
+            setattr(config.TRAIN, 'USE_AMP', True)
+        else:
+            # Otherwise override it
+            config.TRAIN.USE_AMP = True
+            
+    # Set validate frequency from command line args
+    if args.validate_freq > 1:
+        setattr(config, 'VALIDATE_FREQ', args.validate_freq)
+        
+    # Set gradient checkpointing from command line args
+    if args.enable_checkpoint:
+        if not hasattr(config.MODEL, 'ENABLE_CHECKPOINT'):
+            setattr(config.MODEL, 'ENABLE_CHECKPOINT', True)
+        else:
+            config.MODEL.ENABLE_CHECKPOINT = True
+            
+    # Data loading optimizations
+    if args.pin_memory:
+        config.DATA.PIN_MEMORY = True
+        
+    if args.prefetch_factor != 2:  # Only if different from default
+        if not hasattr(config.DATA, 'PREFETCH_FACTOR'):
+            setattr(config.DATA, 'PREFETCH_FACTOR', args.prefetch_factor)
+        else:
+            config.DATA.PREFETCH_FACTOR = args.prefetch_factor
 
     return args, config
 
@@ -92,12 +123,12 @@ def main(config):
     lr_scheduler = CosineAnnealingLR(optimizer, config.TRAIN.EPOCHS)
 
     # Initialize gradient scaler for mixed precision training
-    use_amp = config.TRAIN.USE_AMP if hasattr(config.TRAIN, 'USE_AMP') else False
+    use_amp = getattr(config.TRAIN, 'USE_AMP', False)
     scaler = GradScaler() if use_amp else None
     logger.info(f"Using mixed precision training: {use_amp}")
     
     # Get validation frequency
-    validate_freq = config.VALIDATE_FREQ if hasattr(config, 'VALIDATE_FREQ') else 1
+    validate_freq = getattr(config, 'VALIDATE_FREQ', 1)
     logger.info(f"Validating every {validate_freq} epochs")
 
     max_accuracy = 0.0
@@ -170,6 +201,8 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
     
     # Determine whether to use mixed precision
     use_amp = scaler is not None
+    if use_amp:
+        logger.info(f"Using mixed precision training for epoch {epoch}")
     
     # Get gradient clipping value if configured
     grad_clip_val = getattr(config.TRAIN, 'GRADIENT_CLIP_VAL', 0.0)
@@ -221,7 +254,8 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
             optimizer.zero_grad(set_to_none=True)  # More efficient
 
         # Calculate accuracy
-        (acc1,) = accuracy(outputs, targets)
+        with torch.no_grad():  # Ensure this doesn't add to computation graph
+            (acc1,) = accuracy(outputs, targets)
             
         # Update metrics
         loss_meter.update(loss.item(), targets.size(0))
@@ -236,6 +270,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
             pbar.set_postfix({
                 'loss': f'{loss_meter.avg:.4f}',
                 'acc': f'{acc1_meter.avg:.2f}%',
+                'amp': 'on' if use_amp else 'off',
                 'time/img': f'{batch_time.avg:.3f}s'
             })
             
@@ -245,12 +280,15 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
 
     # Print final epoch stats
     epoch_time = time.time() - start
+    memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
     logger.info(
         f"EPOCH {epoch} training summary: "
         f"loss {loss_meter.avg:.4f}, "
         f"accuracy {acc1_meter.avg:.2f}%, "
         f"lr {optimizer.param_groups[0]['lr']:.6f}, "
-        f"time {datetime.timedelta(seconds=int(epoch_time))}"
+        f"mem {memory_used:.0f}MB, "
+        f"time {datetime.timedelta(seconds=int(epoch_time))}, "
+        f"AMP: {'on' if use_amp else 'off'}"
     )
     
     return acc1_meter.avg, loss_meter.avg
@@ -267,6 +305,8 @@ def validate(config, data_loader, model):
     
     # Determine whether to use mixed precision
     use_amp = getattr(config.TRAIN, 'USE_AMP', False)
+    if use_amp:
+        logger.info("Using mixed precision for validation")
 
     end = time.time()
     for idx, (images, target) in enumerate(data_loader):
@@ -303,6 +343,8 @@ def validate(config, data_loader, model):
                 f"Mem {memory_used:.0f}MB"
             )
 
+    memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+    logger.info(f"Validation complete - Accuracy: {acc1_meter.avg:.2f}%, Loss: {loss_meter.avg:.4f}, Memory: {memory_used:.0f}MB, AMP: {'on' if use_amp else 'off'}")
     return acc1_meter.avg, loss_meter.avg
 
 
@@ -313,6 +355,8 @@ def evaluate(config, data_loader, model):
     
     # Determine whether to use mixed precision
     use_amp = getattr(config.TRAIN, 'USE_AMP', False)
+    if use_amp:
+        logger.info("Using mixed precision for evaluation")
     
     # Use a small batch aggregation to reduce memory pressure
     batch_size = 10
