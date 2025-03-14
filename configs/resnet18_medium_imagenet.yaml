@@ -24,9 +24,7 @@ TRAIN:
     NAME: "sgd"  # Default value, overridden in command to adamw
     MOMENTUM: 0.9
   USE_AMP: True  # Enabled via --use-amp in command
-MEMORY:
-  EMPTY_CACHE_FREQ: 50  # Empty CUDA cache every 50 batches
 OUTPUT: "output/resnet18_medium_imagenet"
 SAVE_FREQ: 5 
-PRINT_FREQ: 100
+PRINT_FREQ: 500
 VALIDATE_FREQ: 1  # Default value, overridden in command to 5 
