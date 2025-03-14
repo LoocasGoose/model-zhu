@@ -10,7 +10,7 @@ DATA:
   PERSISTENT_WORKERS: True
   PREFETCH_FACTOR: 2  # Default value, overridden in command to 4
 MODEL:
-  NAME: "resnet"  # Original ResNet, not ResNetV2
+  NAME: "resnet18"  # Original ResNet, not ResNetV2
   NUM_CLASSES: 200
   DROP_RATE: 0.0
 TRAIN:
