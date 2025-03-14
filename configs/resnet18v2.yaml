@@ -1,0 +1,14 @@
+BASE: ['resnetv2_base.yaml']
+MODEL:
+  VARIANT: "resnet18"  # Will be renamed to resnet18v2 in code
+  USE_SE: True  # Enable Squeeze-and-Excitation blocks for ResNet18v2 (smaller model can benefit from attention)
+  DROP_RATE: 0.1  # Moderate dropout for regularization
+DATA:
+  BATCH_SIZE: 256  # ResNet18v2 is smaller, can use larger batch sizes
+TRAIN:
+  EPOCHS: 100  # Literature shows smaller models may need more epochs
+  LR: 0.02  # Higher learning rate for smaller model
+  OPTIMIZER:
+    NAME: "sgd"
+    WEIGHT_DECAY: 0.0001  # Standard weight decay for ResNet models
+OUTPUT: "output/resnet18v2_medium_imagenet" 

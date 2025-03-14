@@ -1,49 +1,33 @@
 #!/usr/bin/env python3
+"""
+Memory-optimized unified training script for ResNetV2 variants.
+Supports resnet18v2, resnet50v2, and resnet101v2 with a clean, efficient implementation.
+"""
 import os
-import time
-import datetime
 import argparse
+import datetime
+import time
 import yaml
+import json
 import numpy as np
 from pathlib import Path
-from tqdm import tqdm
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
-# Make tensorboard optional
-try:
-    from torch.utils.tensorboard.writer import SummaryWriter
-    TENSORBOARD_AVAILABLE = True
-except ImportError:
-    print("TensorBoard not found, logging to TensorBoard will be disabled")
-    TENSORBOARD_AVAILABLE = False
-    # Create a dummy SummaryWriter
-    class DummySummaryWriter:
-        def __init__(self, log_dir=None):
-            self.log_dir = log_dir
-            print(f"Dummy TensorBoard writer created (logs would have been saved to {log_dir})")
-        
-        def add_scalar(self, *args, **kwargs):
-            pass
-        
-        def close(self):
-            pass
-    
-    SummaryWriter = DummySummaryWriter
+from torch.cuda.amp import GradScaler, autocast
+from tqdm import tqdm
+import logging
 
 from models.resnetv2 import (
-    resnet18, resnet34, resnet50, resnet101, resnet152,
-    mixup_data, cutmix_data, label_smoothing_loss,
-    cosine_annealing_lr, step_lr, warmup_cosine_annealing_lr, one_cycle_lr
+    resnet18, resnet50, resnet101,
+    mixup_data, cutmix_data, label_smoothing_loss
 )
 from data.datasets import MediumImagenetHDF5Dataset
 
 
 class Config:
-    """Configuration class to store the configuration from a yaml file."""
+    """Configuration class to store settings from YAML files."""
     def __init__(self):
         pass
     
@@ -58,25 +42,38 @@ class Config:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Train ResNetV2 on Medium ImageNet')
-    parser.add_argument('--cfg', type=str, default='configs/resnetv2_medium_imagenet.yaml',
-                        help='Path to config file')
-    parser.add_argument('--resume', type=str, default='',
+    parser = argparse.ArgumentParser(description='Train ResNetV2 variants with memory optimization')
+    parser.add_argument('--cfg', type=str, required=True,
+                        help='Path to config file (resnet18v2.yaml, resnet50v2.yaml, or resnet101v2.yaml)')
+    parser.add_argument('--output', type=str, default=None,
+                        help='Output directory (overrides config)')
+    parser.add_argument('--batch-size', type=int, default=None,
+                        help='Batch size (overrides config)')
+    parser.add_argument('--lr', type=float, default=None,
+                        help='Learning rate (overrides config)')
+    parser.add_argument('--epochs', type=int, default=None,
+                        help='Number of epochs (overrides config)')
+    parser.add_argument('--model-variant', type=str, default=None, choices=['resnet18v2', 'resnet50v2', 'resnet101v2'],
+                        help='Model variant to use (overrides config)')
+    parser.add_argument('--resume', type=str, default=None,
                         help='Resume from checkpoint')
-    parser.add_argument('--output', type=str, default='',
-                        help='Output directory')
+    parser.add_argument('--eval', action='store_true',
+                        help='Evaluate only')
+    parser.add_argument('--no-amp', action='store_true',
+                        help='Disable mixed precision training')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')
     parser.add_argument('--gpu', type=int, default=0,
                         help='GPU ID')
-    parser.add_argument('--eval', action='store_true',
-                        help='Evaluate only')
+    parser.add_argument('--workers', type=int, default=None,
+                        help='Number of data loading workers')
     parser.add_argument('--opts', nargs='*', default=None,
-                        help='Modify config options using the command-line')
+                        help='Modify config options using KEY VALUE pairs')
     return parser.parse_args()
 
 
 def load_config(config_file):
+    """Load configuration from YAML file with inheritance support."""
     with open(config_file, 'r') as f:
         config_dict = yaml.safe_load(f)
     
@@ -97,453 +94,474 @@ def load_config(config_file):
     return config
 
 
-def update_config_from_opts(config, opts):
-    """Update config with command line options"""
-    if opts is None:
-        return config
+def update_config_from_args_and_opts(config, args):
+    """Update config with command line arguments and options."""
+    # Override with direct arguments
+    if args.batch_size:
+        config.DATA.BATCH_SIZE = args.batch_size
+    if args.lr:
+        config.TRAIN.LR = args.lr
+    if args.epochs:
+        config.TRAIN.EPOCHS = args.epochs
+    if args.output:
+        config.OUTPUT = args.output
+    if args.workers:
+        config.DATA.NUM_WORKERS = args.workers
+    if args.model_variant:
+        # Map user-friendly names to internal names
+        variant_map = {
+            'resnet18v2': 'resnet18',
+            'resnet50v2': 'resnet50',
+            'resnet101v2': 'resnet101'
+        }
+        config.MODEL.VARIANT = variant_map.get(args.model_variant, config.MODEL.VARIANT)
     
-    # Process options in pairs (key, value)
-    for i in range(0, len(opts), 2):
-        if i + 1 < len(opts):
-            key = opts[i]
-            value = opts[i+1]
-            
-            # Improved type conversion handling
-            try:
-                # First try converting to float (handles scientific notation)
-                converted = float(value)
-                if '.' not in value and 'e' not in value.lower():
-                    # If original value was integer-like, convert to int
-                    value = int(converted) if converted.is_integer() else converted
-                else:
-                    value = converted
-            except ValueError:
-                # Handle boolean values
-                if value.lower() == 'true':
-                    value = True
-                elif value.lower() == 'false':
-                    value = False
-                else:
-                    # Leave as string if not convertible
-                    pass
-            
-            # Force float conversion for specific numerical fields
-            if any(key.endswith(x) for x in ['.LR', '.MIN_LR', '.WEIGHT_DECAY', '.GAMMA', '.STEP_SIZE']):
+    # Override with --opts arguments
+    if args.opts:
+        for i in range(0, len(args.opts), 2):
+            if i + 1 < len(args.opts):
+                key, value = args.opts[i], args.opts[i+1]
+                
+                # Try to convert value to appropriate type
                 try:
+                    # Convert to appropriate numeric type
                     value = float(value)
-                except (ValueError, TypeError):
-                    pass
-
-            # Handle nested attributes
-            keys = key.split('.')
-            cfg = config
-            for k in keys[:-1]:
-                if not hasattr(cfg, k):
-                    setattr(cfg, k, Config())
-                cfg = getattr(cfg, k)
-            
-            # Set the value
-            setattr(cfg, keys[-1], value)
+                    if value.is_integer():
+                        value = int(value)
+                except (ValueError, AttributeError):
+                    # Handle boolean values
+                    if isinstance(value, str) and value.lower() == 'true':
+                        value = True
+                    elif isinstance(value, str) and value.lower() == 'false':
+                        value = False
+                
+                # Set nested config attribute
+                keys = key.split('.')
+                cfg = config
+                for k in keys[:-1]:
+                    if not hasattr(cfg, k):
+                        setattr(cfg, k, Config())
+                    cfg = getattr(cfg, k)
+                setattr(cfg, keys[-1], value)
     
     return config
 
 
-def get_model(config):
-    """Create model based on config"""
-    variant = config.MODEL.VARIANT
-    kwargs = {
-        'num_classes': config.MODEL.NUM_CLASSES,
-        'zero_init_residual': config.MODEL.ZERO_INIT_RESIDUAL,
-        'use_se': config.MODEL.USE_SE,
-        'dropout_rate': config.MODEL.DROP_RATE
-    }
+def setup_logger(output_dir, name="train"):
+    """Set up logger for training."""
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
     
+    # Clear existing handlers
+    if logger.hasHandlers():
+        logger.handlers.clear()
+    
+    # Console handler
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(asctime)s] %(message)s')
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+    
+    # File handler
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        file_handler = logging.FileHandler(os.path.join(output_dir, f"{name}.log"))
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    
+    return logger
+
+
+def get_model(config):
+    """Build ResNetV2 model based on config."""
+    variant = config.MODEL.VARIANT
+    num_classes = config.MODEL.NUM_CLASSES
+    use_se = getattr(config.MODEL, 'USE_SE', False)
+    drop_rate = getattr(config.MODEL, 'DROP_RATE', 0.0)
+    zero_init_residual = getattr(config.MODEL, 'ZERO_INIT_RESIDUAL', True)
+    
+    # Map standard variant names to functions
     model_dict = {
         'resnet18': resnet18,
-        'resnet34': resnet34,
         'resnet50': resnet50,
-        'resnet101': resnet101,
-        'resnet152': resnet152
+        'resnet101': resnet101
     }
     
     if variant not in model_dict:
         raise ValueError(f"Unsupported model variant: {variant}")
-        
-    return model_dict[variant](**kwargs)
+    
+    # Create model
+    model = model_dict[variant](
+        num_classes=num_classes,
+        use_se=use_se,
+        dropout_rate=drop_rate,
+        zero_init_residual=zero_init_residual
+    )
+    
+    return model
 
 
 def get_optimizer(config, model):
-    """
-    Create optimizer based on config
-    
-    Args:
-        config (Config): Configuration object
-        model (nn.Module): Model to optimize
-        
-    Returns:
-        optimizer (Optimizer): PyTorch optimizer
-    """
-    optimizer_name = config.TRAIN.OPTIMIZER.NAME
+    """Create optimizer based on config."""
+    optimizer_name = config.TRAIN.OPTIMIZER.NAME.lower()
     lr = config.TRAIN.LR
-    weight_decay = config.TRAIN.OPTIMIZER.WEIGHT_DECAY if hasattr(config.TRAIN.OPTIMIZER, 'WEIGHT_DECAY') else 0.01
     
     if optimizer_name == 'sgd':
-        momentum = config.TRAIN.OPTIMIZER.MOMENTUM
-        optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        optimizer = optim.SGD(
+            model.parameters(),
+            lr=lr,
+            momentum=config.TRAIN.OPTIMIZER.MOMENTUM,
+            weight_decay=config.TRAIN.OPTIMIZER.WEIGHT_DECAY,
+            nesterov=getattr(config.TRAIN.OPTIMIZER, 'NESTEROV', False)
+        )
     elif optimizer_name == 'adam':
-        betas = eval(config.TRAIN.OPTIMIZER.BETAS) if hasattr(config.TRAIN.OPTIMIZER, 'BETAS') else (0.9, 0.999)
-        eps = config.TRAIN.OPTIMIZER.EPS if hasattr(config.TRAIN.OPTIMIZER, 'EPS') else 1e-8
-        optimizer = optim.Adam(model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        optimizer = optim.Adam(
+            model.parameters(),
+            lr=lr,
+            weight_decay=config.TRAIN.OPTIMIZER.WEIGHT_DECAY
+        )
     elif optimizer_name == 'adamw':
-        betas = eval(config.TRAIN.OPTIMIZER.BETAS) if hasattr(config.TRAIN.OPTIMIZER, 'BETAS') else (0.9, 0.999)
-        eps = config.TRAIN.OPTIMIZER.EPS if hasattr(config.TRAIN.OPTIMIZER, 'EPS') else 1e-8
-        optimizer = optim.AdamW(model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=lr,
+            weight_decay=config.TRAIN.OPTIMIZER.WEIGHT_DECAY
+        )
     else:
         raise ValueError(f"Unsupported optimizer: {optimizer_name}")
     
     return optimizer
 
 
-def get_lr_scheduler(config, optimizer):
-    """Create learning rate scheduler based on config"""
-    scheduler_name = config.TRAIN.LR_SCHEDULER.NAME
+def get_scheduler(config, optimizer):
+    """Create learning rate scheduler based on config."""
+    scheduler_name = config.TRAIN.LR_SCHEDULER.NAME.lower()
+    epochs = config.TRAIN.EPOCHS
+    min_lr = getattr(config.TRAIN, 'MIN_LR', 0)
     
-    schedulers = {
-        'cosine': lambda: optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=lambda epoch: cosine_annealing_lr(
-                epoch, config.TRAIN.EPOCHS, 1.0, config.TRAIN.MIN_LR / config.TRAIN.LR
-            )
-        ),
-        'step': lambda: optim.lr_scheduler.StepLR(
-            optimizer, 
-            step_size=config.TRAIN.LR_SCHEDULER.STEP_SIZE, 
-            gamma=config.TRAIN.LR_SCHEDULER.GAMMA
-        ),
-        'warmup_cosine': lambda: optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=lambda epoch: warmup_cosine_annealing_lr(
-                epoch, config.TRAIN.EPOCHS, config.TRAIN.WARMUP_EPOCHS,
-                1.0, config.TRAIN.MIN_LR / config.TRAIN.LR
-            )
-        ),
-        'one_cycle': lambda: optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=lambda epoch: one_cycle_lr(
-                epoch, config.TRAIN.EPOCHS, 1.0, 
-                config.TRAIN.LR_SCHEDULER.MAX_LR / config.TRAIN.LR,
-                config.TRAIN.MIN_LR / config.TRAIN.LR
-            )
+    if scheduler_name == 'cosine':
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=epochs, eta_min=min_lr
         )
-    }
-    
-    if scheduler_name not in schedulers:
-        raise ValueError(f"Unsupported scheduler: {scheduler_name}")
+    elif scheduler_name == 'step':
+        step_size = getattr(config.TRAIN.LR_SCHEDULER, 'STEP_SIZE', epochs // 3)
+        gamma = getattr(config.TRAIN.LR_SCHEDULER, 'GAMMA', 0.1)
+        scheduler = optim.lr_scheduler.StepLR(
+            optimizer, step_size=step_size, gamma=gamma
+        )
+    elif scheduler_name == 'warmup_cosine':
+        warmup_epochs = getattr(config.TRAIN, 'WARMUP_EPOCHS', epochs // 10)
         
-    return schedulers[scheduler_name]()
-
-
-def mixup_data(x, y, alpha=1.0):
-    """
-    Memory-optimized mixup augmentation.
-    
-    Args:
-        x: Input batch
-        y: Target batch
-        alpha: Mixup alpha parameter
+        def lr_lambda(epoch):
+            if epoch < warmup_epochs:
+                # Linear warmup
+                return epoch / warmup_epochs
+            else:
+                # Cosine annealing
+                progress = (epoch - warmup_epochs) / (epochs - warmup_epochs)
+                return min_lr / config.TRAIN.LR + 0.5 * (1 - min_lr / config.TRAIN.LR) * (1 + np.cos(np.pi * progress))
         
-    Returns:
-        Mixed input, target_a, target_b, and lambda
-    """
-    if alpha > 0:
-        lam = np.random.beta(alpha, alpha)
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     else:
-        lam = 1
-
-    batch_size = x.size()[0]
-    index = torch.randperm(batch_size).to(x.device)
-
-    # In-place operation to save memory
-    x_mixed = x.clone()
-    x_mixed.mul_(lam).add_((1 - lam), x.index_select(0, index))
-    y_a, y_b = y, y[index]
-    return x_mixed, y_a, y_b, lam
+        # Default to cosine scheduler
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=epochs, eta_min=min_lr
+        )
+    
+    return scheduler
 
 
-def cutmix_data(x, y, alpha=1.0):
-    """
-    Memory-optimized CutMix augmentation.
-    
-    Args:
-        x: Input batch
-        y: Target batch
-        alpha: CutMix alpha parameter
-        
-    Returns:
-        Mixed input, target_a, target_b, and lambda
-    """
-    if alpha > 0:
-        lam = np.random.beta(alpha, alpha)
-    else:
-        lam = 1
-        
-    batch_size = x.size()[0]
-    index = torch.randperm(batch_size).to(x.device)
-    
-    W, H = x.size()[2], x.size()[3]
-    cut_ratio = np.sqrt(1. - lam)
-    cut_w = int(W * cut_ratio)
-    cut_h = int(H * cut_ratio)
-    
-    # Determine center of cutout
-    cx = np.random.randint(W)
-    cy = np.random.randint(H)
-    
-    # Boundary
-    bbx1 = np.clip(cx - cut_w // 2, 0, W)
-    bby1 = np.clip(cy - cut_h // 2, 0, H)
-    bbx2 = np.clip(cx + cut_w // 2, 0, W)
-    bby2 = np.clip(cy + cut_h // 2, 0, H)
-    
-    # Apply cutmix (modify x in-place rather than creating a new tensor)
-    x_aug = x.clone()
-    # Use slicing to avoid unnecessary memory allocation
-    x_aug[:, :, bbx1:bbx2, bby1:bby2] = x.index_select(0, index)[:, :, bbx1:bbx2, bby1:bby2]
-    
-    # Adjust lambda to match actual area ratio
-    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (W * H))
-    
-    return x_aug, y, y[index], lam
-
-
-def train_one_epoch(model, train_loader, optimizer, scheduler, epoch, config, device, writer):
-    """
-    Memory-optimized training for one epoch
-    
-    Args:
-        model (nn.Module): Model to train
-        train_loader (DataLoader): Training data loader
-        optimizer (Optimizer): PyTorch optimizer
-        scheduler (LRScheduler): Learning rate scheduler
-        epoch (int): Current epoch
-        config (Config): Configuration object
-        device (torch.device): Device to train on
-        writer (SummaryWriter): TensorBoard writer
-        
-    Returns:
-        train_loss (float): Training loss
-        train_acc (float): Training accuracy
-    """
+def train_one_epoch(model, train_loader, optimizer, epoch, config, device, logger, scaler=None):
+    """Train the model for one epoch with memory optimizations."""
     model.train()
-    train_loss = 0
+    total_loss = 0
     correct = 0
     total = 0
-    batch_idx = 0
     
-    # Get augmentation parameters with reduced probabilities to save memory
-    use_mixup = hasattr(config.AUG, 'MIXUP') and config.AUG.MIXUP > 0
-    use_cutmix = hasattr(config.AUG, 'CUTMIX') and config.AUG.CUTMIX > 0
-    # Lower the augmentation probability to save memory
-    mixup_prob = 0.5  # Only apply mixup to 50% of batches
-    cutmix_prob = 0.3  # Only apply cutmix to 30% of batches
+    # Get training parameters
+    use_amp = getattr(config.TRAIN, 'USE_AMP', True) and scaler is not None
+    grad_accum_steps = getattr(config.TRAIN, 'GRADIENT_ACCUMULATION_STEPS', 1)
+    grad_clip_val = getattr(config.TRAIN, 'GRADIENT_CLIP_VAL', 0.0)
     
-    mixup_alpha = config.AUG.MIXUP if use_mixup else 0
-    cutmix_alpha = config.AUG.CUTMIX if use_cutmix else 0
-    smoothing = config.AUG.LABEL_SMOOTHING if hasattr(config.AUG, 'LABEL_SMOOTHING') else 0
+    # Get augmentation parameters
+    use_mixup = getattr(config.AUG, 'MIXUP', 0) > 0
+    use_cutmix = getattr(config.AUG, 'CUTMIX', 0) > 0
+    mixup_alpha = getattr(config.AUG, 'MIXUP', 0.2)
+    cutmix_alpha = getattr(config.AUG, 'CUTMIX', 0.2)
+    label_smoothing = getattr(config.AUG, 'LABEL_SMOOTHING', 0.1)
     
-    # Enable gradient checkpointing to save memory if available
-    if hasattr(model, 'module'):
-        model_to_checkpoint = model.module
-    else:
-        model_to_checkpoint = model
+    # Memory optimization settings
+    empty_cache_freq = getattr(config.MEMORY, 'EMPTY_CACHE_FREQ', 50) if hasattr(config, 'MEMORY') else 50
     
-    # Enable gradient checkpointing on supported models
-    if hasattr(model_to_checkpoint, 'layer1'):
-        for layer in [model_to_checkpoint.layer1, model_to_checkpoint.layer2, 
-                     model_to_checkpoint.layer3, model_to_checkpoint.layer4]:
-            if hasattr(layer, 'apply'):
-                # Enable checkpointing on ResNet blocks
-                for block in layer:
-                    if hasattr(block, 'conv1') and hasattr(block, 'conv2'):
-                        block.use_checkpoint = True
+    # Enable gradient checkpointing for memory savings
+    for layer in [model.layer1, model.layer2, model.layer3, model.layer4]:
+        for block in layer:
+            if hasattr(block, 'use_checkpoint'):
+                block.use_checkpoint = True
+    
+    # Create progress bar
+    pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS-1}")
+    
+    # Set gradient accumulation counters
+    optimizer.zero_grad()
+    accumulation_steps = 0
+    
+    for i, (inputs, targets) in enumerate(pbar):
+        inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
         
-    # Create tqdm progress bar
-    pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS-1}", 
-                leave=True, dynamic_ncols=True)
-    
-    start_time = time.time()
-    
-    for batch_idx, (inputs, targets) in enumerate(pbar):
-        inputs, targets = inputs.to(device), targets.to(device)
-        
-        # Randomly decide whether to apply augmentation to save memory
-        rand_val = np.random.rand()
+        # Apply data augmentation (with reduced probability to save memory)
+        rand_val = torch.rand(1).item()
         use_mix = None
         
-        # Apply mixup or cutmix with reduced probability
-        if use_mixup and rand_val < mixup_prob:
+        if use_mixup and rand_val < 0.3:  # 30% chance for mixup
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
             use_mix = 'mixup'
-        elif use_cutmix and rand_val < mixup_prob + cutmix_prob:
+        elif use_cutmix and rand_val < 0.5:  # 20% chance for cutmix (0.5-0.3)
             inputs, targets_a, targets_b, lam = cutmix_data(inputs, targets, cutmix_alpha)
             use_mix = 'cutmix'
         
-        # Forward pass
-        outputs = model(inputs)
-        
-        # Compute loss
-        if use_mix:
-            # For mixup and cutmix, blend the losses
-            if smoothing > 0:
-                loss = lam * label_smoothing_loss(outputs, targets_a, smoothing) + \
-                      (1 - lam) * label_smoothing_loss(outputs, targets_b, smoothing)
-            else:
-                loss = lam * F.cross_entropy(outputs, targets_a) + \
-                      (1 - lam) * F.cross_entropy(outputs, targets_b)
+        # Use mixed precision for forward pass if available
+        if use_amp and scaler is not None:
+            with autocast():
+                outputs = model(inputs)
+                
+                if use_mix:
+                    loss = lam * label_smoothing_loss(outputs, targets_a, label_smoothing) + \
+                        (1 - lam) * label_smoothing_loss(outputs, targets_b, label_smoothing)
+                else:
+                    loss = label_smoothing_loss(outputs, targets, label_smoothing)
+                
+                # Scale loss for gradient accumulation
+                loss = loss / grad_accum_steps
+                
+            # Backward pass with scaler
+            scaler.scale(loss).backward()
+            accumulation_steps += 1
+            
+            # Step optimizer on accumulation boundary or at the end
+            if accumulation_steps == grad_accum_steps or i == len(train_loader) - 1:
+                if grad_clip_val > 0:
+                    # Unscale before clipping gradients
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_val)
+                
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+                accumulation_steps = 0
         else:
-            # No mixing, just regular loss
-            if smoothing > 0:
-                loss = label_smoothing_loss(outputs, targets, smoothing)
+            # Standard precision
+            outputs = model(inputs)
+            
+            if use_mix:
+                loss = lam * label_smoothing_loss(outputs, targets_a, label_smoothing) + \
+                    (1 - lam) * label_smoothing_loss(outputs, targets_b, label_smoothing)
             else:
-                loss = F.cross_entropy(outputs, targets)
+                loss = label_smoothing_loss(outputs, targets, label_smoothing)
+            
+            # Scale loss for gradient accumulation
+            loss = loss / grad_accum_steps
+            
+            # Backward pass
+            loss.backward()
+            accumulation_steps += 1
+            
+            # Step optimizer on accumulation boundary or at the end
+            if accumulation_steps == grad_accum_steps or i == len(train_loader) - 1:
+                if grad_clip_val > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_val)
+                
+                optimizer.step()
+                optimizer.zero_grad()
+                accumulation_steps = 0
         
-        # Backward pass and optimize
-        optimizer.zero_grad()
-        loss.backward()
-        # Apply gradient clipping to improve stability
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
-        
-        # Clear memory explicitly
-        if hasattr(torch.cuda, 'empty_cache') and batch_idx % 10 == 0:
-            torch.cuda.empty_cache()
-        
-        # Update stats
-        train_loss += loss.item()
+        # Record stats (use full loss, not scaled)
+        batch_loss = loss.item() * grad_accum_steps
+        total_loss += batch_loss
         _, predicted = outputs.max(1)
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
         
-        if use_mix:
-            # For mixup, we can't easily compute accuracy during training
-            # So we just use the original targets for visualization
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-        else:
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-        
-        # Update tqdm progress bar with metrics
-        current_lr = optimizer.param_groups[0]['lr']
-        current_loss = train_loss / (batch_idx + 1)
-        current_acc = 100. * correct / total if total > 0 else 0
-        
+        # Update progress bar
+        accuracy = 100.0 * correct / total
+        current_lr = optimizer.param_groups[0]["lr"]
         pbar.set_postfix({
-            'loss': f'{current_loss:.3f}',
-            'acc': f'{current_acc:.2f}%', 
+            'loss': f'{total_loss/(i+1):.3f}',
+            'acc': f'{accuracy:.2f}%',
             'lr': f'{current_lr:.6f}'
         })
-
-    # Calculate average metrics
-    train_loss /= (batch_idx + 1)
-    train_acc = 100. * correct / total
+        
+        # Explicit memory cleanup
+        if i % empty_cache_freq == 0 and torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
-    # Update TensorBoard
-    writer.add_scalar('train/loss', train_loss, epoch)
-    writer.add_scalar('train/acc', train_acc, epoch)
-    writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], epoch)
+    # Final metrics
+    avg_loss = total_loss / len(train_loader)
+    accuracy = 100.0 * correct / total
+    logger.info(f"Epoch {epoch} - Train Loss: {avg_loss:.4f}, Acc: {accuracy:.2f}%, "
+                f"LR: {optimizer.param_groups[0]['lr']:.6f}")
     
-    elapsed_time = time.time() - start_time
-    print(f"Training: Loss: {train_loss:.3f} | Acc: {train_acc:.3f}% | Time: {elapsed_time:.2f}s")
-    
-    return train_loss, train_acc
+    return avg_loss, accuracy
 
 
-def validate(model, val_loader, epoch, config, device, writer):
-    """Validate model on validation set"""
+@torch.no_grad()
+def validate(model, val_loader, device, logger):
+    """Validate the model."""
     model.eval()
-    val_loss = 0
+    total_loss = 0
     correct = 0
     total = 0
     
-    # Create tqdm progress bar for validation
-    pbar = tqdm(val_loader, desc=f"Validation", leave=True, dynamic_ncols=True)
+    # Create progress bar
+    pbar = tqdm(val_loader, desc="Validating")
     
-    with torch.no_grad():
-        for inputs, targets in pbar:
-            inputs, targets = inputs.to(device), targets.to(device)
-            
-            outputs = model(inputs)
-            loss = F.cross_entropy(outputs, targets)
-            
-            val_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-            
-            # Update progress bar
-            current_loss = val_loss / (pbar.n + 1)
-            current_acc = 100. * correct / total if total > 0 else 0
-            
-            pbar.set_postfix({
-                'loss': f'{current_loss:.3f}',
-                'acc': f'{current_acc:.2f}%'
-            })
+    for inputs, targets in pbar:
+        inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
+        
+        # Forward pass
+        outputs = model(inputs)
+        loss = F.cross_entropy(outputs, targets)
+        
+        # Record stats
+        total_loss += loss.item()
+        _, predicted = outputs.max(1)
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
+        
+        # Update progress bar
+        accuracy = 100.0 * correct / total
+        pbar.set_postfix({
+            'loss': f'{total_loss/len(val_loader):.3f}',
+            'acc': f'{accuracy:.2f}%'
+        })
     
-    # Calculate and log metrics
-    val_loss /= len(val_loader)
-    val_acc = 100. * correct / total
+    # Final metrics
+    avg_loss = total_loss / len(val_loader)
+    accuracy = 100.0 * correct / total
+    logger.info(f"Validation - Loss: {avg_loss:.4f}, Acc: {accuracy:.2f}%")
     
-    writer.add_scalar('val/loss', val_loss, epoch)
-    writer.add_scalar('val/acc', val_acc, epoch)
+    return avg_loss, accuracy
+
+
+def save_checkpoint(model, optimizer, scheduler, epoch, accuracy, config, output_dir, is_best=False, logger=None):
+    """Save model checkpoint."""
+    checkpoint_dir = os.path.join(output_dir, "checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
     
-    print(f"Validation: Loss: {val_loss:.3f} | Acc: {val_acc:.3f}%")
+    # Get friendly model name for filename
+    variant_to_name = {
+        'resnet18': 'resnet18v2',
+        'resnet50': 'resnet50v2',
+        'resnet101': 'resnet101v2'
+    }
+    model_name = variant_to_name.get(config.MODEL.VARIANT, 'resnetv2')
     
-    return val_loss, val_acc
+    # Save to the specific epoch checkpoint
+    checkpoint_path = os.path.join(checkpoint_dir, f"{model_name}_epoch{epoch}.pth")
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+        'accuracy': accuracy,
+        'config': vars(config) if hasattr(config, '__dict__') else config,
+    }, checkpoint_path)
+    
+    # If best model so far, create a copy
+    if is_best:
+        best_path = os.path.join(output_dir, f"{model_name}_best.pth")
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+            'accuracy': accuracy,
+            'config': vars(config) if hasattr(config, '__dict__') else config,
+        }, best_path)
+        if logger:
+            logger.info(f"Saved best model with accuracy {accuracy:.2f}% to {best_path}")
+    
+    return checkpoint_path
 
 
 def main():
+    """Main function to run training."""
     # Parse arguments
     args = parse_args()
     
     # Set random seed
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
     
-    # Load and update config
+    # Enable cuDNN benchmarking for better performance
+    torch.backends.cudnn.benchmark = True
+    
+    # Load config and update with args
     config = load_config(args.cfg)
-    config = update_config_from_opts(config, args.opts)
-    if args.output:
-        config.OUTPUT = args.output
+    config = update_config_from_args_and_opts(config, args)
     
-    # Create output directory and setup
-    output_dir = Path(config.OUTPUT)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
+    # Setup device
     device = torch.device(f'cuda:{args.gpu}' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
     
-    # Create TensorBoard writer and save config
-    writer = SummaryWriter(log_dir=str(output_dir / 'tensorboard'))
-    with open(output_dir / 'config.yaml', 'w') as f:
-        yaml.dump(vars(config), f)
+    # Create output directory
+    output_dir = config.OUTPUT
+    os.makedirs(output_dir, exist_ok=True)
     
-    # Create model, datasets, dataloaders, optimizer and scheduler
-    model = get_model(config).to(device)
-    print(f"Model: {config.MODEL.VARIANT}, Classes: {config.MODEL.NUM_CLASSES}")
+    # Setup logger
+    logger = setup_logger(output_dir)
     
+    # Log config and command
+    logger.info(f"Using config: {args.cfg}")
+    logger.info(f"Arguments: {vars(args)}")
+    logger.info(f"Using device: {device}")
+    
+    # Save config to output directory
+    with open(os.path.join(output_dir, 'config.yaml'), 'w') as f:
+        yaml.dump(vars(config) if hasattr(config, '__dict__') else config, f)
+    
+    # Get human-readable model name
+    variant_to_name = {
+        'resnet18': 'ResNet18v2',
+        'resnet50': 'ResNet50v2',
+        'resnet101': 'ResNet101v2'
+    }
+    model_name = variant_to_name.get(config.MODEL.VARIANT, 'ResNetV2')
+    
+    # Create model
+    model = get_model(config)
+    model = model.to(device)
+    logger.info(f"Created {model_name} model")
+    
+    # Log parameter count
+    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Model has {num_params:,} trainable parameters")
+    
+    # Create datasets and dataloaders
     img_size = config.DATA.IMG_SIZE
+    batch_size = config.DATA.BATCH_SIZE
+    num_workers = getattr(config.DATA, 'NUM_WORKERS', 4)
+    pin_memory = getattr(config.DATA, 'PIN_MEMORY', False)
+    persistent_workers = getattr(config.DATA, 'PERSISTENT_WORKERS', False)
+    prefetch_factor = getattr(config.DATA, 'PREFETCH_FACTOR', 2)
+    
+    # Dataset path
+    dataset_path = config.DATA.MEDIUM_IMAGENET_PATH
+    
     train_dataset = MediumImagenetHDF5Dataset(
-        img_size=img_size, split='train', 
-        filepath=config.DATA.MEDIUM_IMAGENET_PATH, augment=True
+        img_size=img_size, 
+        split='train',
+        filepath=dataset_path, 
+        augment=True
     )
     val_dataset = MediumImagenetHDF5Dataset(
-        img_size=img_size, split='val',
-        filepath=config.DATA.MEDIUM_IMAGENET_PATH, augment=False
+        img_size=img_size, 
+        split='val',
+        filepath=dataset_path, 
+        augment=False
     )
-    
-    # Create dataloaders
-    batch_size = config.DATA.BATCH_SIZE
-    num_workers = config.DATA.NUM_WORKERS if hasattr(config.DATA, 'NUM_WORKERS') else 4
-    pin_memory = config.DATA.PIN_MEMORY if hasattr(config.DATA, 'PIN_MEMORY') else False
     
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -551,85 +569,125 @@ def main():
         shuffle=True,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=True,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        drop_last=True
     )
     
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
-        batch_size=batch_size * 2,
+        batch_size=batch_size * 2,  # Larger batch size for validation
         shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None
     )
     
-    # Create optimizer
+    logger.info(f"Training dataset: {len(train_dataset)} samples")
+    logger.info(f"Validation dataset: {len(val_dataset)} samples")
+    
+    # Create optimizer and scheduler
     optimizer = get_optimizer(config, model)
+    scheduler = get_scheduler(config, optimizer)
     
-    # Create learning rate scheduler
-    scheduler = get_lr_scheduler(config, optimizer)
+    # Create gradient scaler for mixed precision
+    use_amp = getattr(config.TRAIN, 'USE_AMP', True) and not args.no_amp
+    scaler = GradScaler() if use_amp and torch.cuda.is_available() else None
     
-    # Initialize best accuracy
-    best_acc = 0
+    # Get validation frequency
+    validate_freq = getattr(config, 'VALIDATE_FREQ', 1)
+    save_freq = getattr(config, 'SAVE_FREQ', 5)
+    
+    # Resume from checkpoint if provided
     start_epoch = 0
-    
-    # Resume from checkpoint if specified
+    best_accuracy = 0
     if args.resume:
-        checkpoint = torch.load(args.resume)
-        model.load_state_dict(checkpoint['model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        scheduler.load_state_dict(checkpoint['scheduler'])
-        start_epoch = checkpoint['epoch'] + 1
-        best_acc = checkpoint['best_acc']
-        print(f"Resumed from epoch {start_epoch - 1}")
+        try:
+            checkpoint = torch.load(args.resume, map_location=device)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if checkpoint.get('scheduler_state_dict') and scheduler:
+                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            start_epoch = checkpoint.get('epoch', -1) + 1
+            best_accuracy = checkpoint.get('accuracy', 0)
+            logger.info(f"Resumed from epoch {start_epoch-1} with accuracy {best_accuracy:.2f}%")
+        except Exception as e:
+            logger.error(f"Error loading checkpoint: {e}")
+            logger.info("Starting from scratch")
     
     # Evaluate only if specified
     if args.eval:
-        print("Evaluating model...")
-        validate(model, val_loader, 0, config, device, writer)
+        logger.info("Evaluating model...")
+        val_loss, val_acc = validate(model, val_loader, device, logger)
+        logger.info(f"Evaluation - Loss: {val_loss:.4f}, Accuracy: {val_acc:.2f}%")
         return
     
-    # Train model
-    print(f"Starting training for {config.TRAIN.EPOCHS} epochs")
+    # Print training info
+    logger.info(f"Starting training for {config.TRAIN.EPOCHS} epochs")
+    logger.info(f"Batch size: {batch_size}, Accumulation steps: {getattr(config.TRAIN, 'GRADIENT_ACCUMULATION_STEPS', 1)}")
+    logger.info(f"Effective batch size: {batch_size * getattr(config.TRAIN, 'GRADIENT_ACCUMULATION_STEPS', 1)}")
+    logger.info(f"Mixed precision: {use_amp}, Learning rate: {config.TRAIN.LR}")
+    
+    # Initialize metrics tracking
+    metrics_history = []
+    
+    # Training loop
     for epoch in range(start_epoch, config.TRAIN.EPOCHS):
         # Train one epoch
+        epoch_start_time = time.time()
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, scheduler, epoch, config, device, writer
+            model, train_loader, optimizer, epoch, config, device, logger, scaler
         )
+        epoch_time = time.time() - epoch_start_time
         
-        # Validate
-        val_loss, val_acc = validate(model, val_loader, epoch, config, device, writer)
+        # Validate if needed
+        validate_this_epoch = (epoch % validate_freq == 0 or epoch == config.TRAIN.EPOCHS - 1)
+        if validate_this_epoch:
+            val_loss, val_acc = validate(model, val_loader, device, logger)
+            # Update best accuracy
+            is_best = val_acc > best_accuracy
+            best_accuracy = max(best_accuracy, val_acc)
+        else:
+            val_loss, val_acc = -1, -1
+            is_best = False
+            logger.info(f"Skipping validation for epoch {epoch}")
         
         # Update learning rate
         scheduler.step()
         
-        # Save checkpoint
-        is_best = val_acc > best_acc
-        best_acc = max(val_acc, best_acc)
+        # Save checkpoint if needed
+        if epoch % save_freq == 0 or epoch == config.TRAIN.EPOCHS - 1 or is_best:
+            checkpoint_path = save_checkpoint(
+                model, optimizer, scheduler, epoch, val_acc, 
+                config, output_dir, is_best, logger
+            )
+            logger.info(f"Checkpoint saved to {checkpoint_path}")
         
-        save_state = {
-            'model': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'scheduler': scheduler.state_dict(),
-            'epoch': epoch,
-            'best_acc': best_acc,
+        # Track metrics
+        metrics = {
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+            "val_loss": val_loss if validate_this_epoch else None,
+            "val_acc": val_acc if validate_this_epoch else None,
+            "lr": optimizer.param_groups[0]["lr"],
+            "time": epoch_time
         }
+        metrics_history.append(metrics)
         
-        # Save checkpoint
-        if (epoch + 1) % config.SAVE_FREQ == 0 or is_best:
-            checkpoint_path = output_dir / f'checkpoint-{epoch:03d}.pth'
-            torch.save(save_state, checkpoint_path)
-            print(f"Saved checkpoint to {checkpoint_path}")
+        # Save metrics to file
+        metrics_path = os.path.join(output_dir, "metrics.json")
+        with open(metrics_path, "w") as f:
+            json.dump(metrics_history, f, indent=2)
         
-        # Save best model
-        if is_best:
-            best_path = output_dir / 'model_best.pth'
-            torch.save(save_state, best_path)
-            print(f"Saved best model with accuracy {best_acc:.2f}%")
+        # Update best accuracy message
+        logger.info(f"Best accuracy so far: {best_accuracy:.2f}%")
+        logger.info(f"Epoch {epoch} completed in {datetime.timedelta(seconds=int(epoch_time))}")
     
     # Final message
-    print(f"Training completed. Best accuracy: {best_acc:.2f}%")
-    writer.close()
+    logger.info(f"Training completed. Best accuracy: {best_accuracy:.2f}%")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 

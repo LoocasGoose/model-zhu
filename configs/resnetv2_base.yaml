@@ -4,33 +4,39 @@ AUG:
   CUTMIX: 0.2
   LABEL_SMOOTHING: 0.1
 DATA:
-  BATCH_SIZE: 1024
-  DATASET: "cifar10"
-  IMG_SIZE: 32
+  BATCH_SIZE: 128
+  DATASET: "medium_imagenet"
+  MEDIUM_IMAGENET_PATH: '/honey/nmep/medium-imagenet-96.hdf5'
+  IMG_SIZE: 96
+  NUM_WORKERS: 8
+  PIN_MEMORY: True
+  PERSISTENT_WORKERS: True
+  PREFETCH_FACTOR: 2
 MODEL:
   NAME: "resnetv2"
   VARIANT: "resnet18"  # Options: resnet18, resnet34, resnet50, resnet101, resnet152
-  NUM_CLASSES: 10
+  NUM_CLASSES: 200
   DROP_RATE: 0.0
   ZERO_INIT_RESIDUAL: True
   USE_SE: False
 TRAIN:
-  EPOCHS: 100
-  WARMUP_EPOCHS: 20
-  LR: 3e-4
-  MIN_LR: 3e-5
-  WARMUP_LR: 3e-5
+  EPOCHS: 60
+  WARMUP_EPOCHS: 5
+  LR: 0.01
+  MIN_LR: 0.0001
   LR_SCHEDULER:
-    NAME: "cosine"  # Options: cosine, step, warmup_cosine, one_cycle
-    STEP_SIZE: 30  # For step scheduler
-    GAMMA: 0.1  # For step scheduler
-    MAX_LR: 1e-3  # For one_cycle scheduler
+    NAME: "cosine"  # Literature recommendation: cosine with warmup
   OPTIMIZER:
-    NAME: "sgd"  # Options: sgd, adam, adamw
-    EPS: 1e-8
-    BETAS: (0.9, 0.999)
+    NAME: "sgd"  # Literature recommendation: SGD with momentum
     MOMENTUM: 0.9
-    WEIGHT_DECAY: 0.01
-OUTPUT: "output/resnetv2_cifar"
-SAVE_FREQ: 50 
-PRINT_FREQ: 500 
+    WEIGHT_DECAY: 0.0001
+    NESTEROV: True
+  USE_AMP: True  # Use mixed precision training
+  GRADIENT_CLIP_VAL: 1.0
+  GRADIENT_ACCUMULATION_STEPS: 1
+MEMORY:
+  EMPTY_CACHE_FREQ: 50  # Empty CUDA cache every 50 batches
+OUTPUT: "output/"
+SAVE_FREQ: 5 
+PRINT_FREQ: 100
+VALIDATE_FREQ: 1 

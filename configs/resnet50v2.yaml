@@ -1,0 +1,15 @@
+BASE: ['resnetv2_base.yaml']
+MODEL:
+  VARIANT: "resnet50"  # Will be renamed to resnet50v2 in code
+  USE_SE: True  # Enable Squeeze-and-Excitation blocks for improved accuracy
+  DROP_RATE: 0.2  # Higher dropout for more regularization (standard for deeper networks)
+DATA:
+  BATCH_SIZE: 128  # Standard batch size for ResNet50
+TRAIN:
+  EPOCHS: 60  # Standard epochs for medium-sized networks
+  LR: 0.01  # Literature-standard LR for ResNet50
+  OPTIMIZER:
+    NAME: "sgd"
+    WEIGHT_DECAY: 0.0001  # Standard weight decay
+  GRADIENT_ACCUMULATION_STEPS: 2  # Increase effective batch size with gradient accumulation
+OUTPUT: "output/resnet50v2_medium_imagenet" 
