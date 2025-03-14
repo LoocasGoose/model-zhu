@@ -27,4 +27,3 @@ TRAIN:
 OUTPUT: "output/resnet18_medium_imagenet"
 SAVE_FREQ: 5 
 PRINT_FREQ: 500
-VALIDATE_FREQ: 1  # Default value, overridden in command to 5 
