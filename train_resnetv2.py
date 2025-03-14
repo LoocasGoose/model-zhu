@@ -293,11 +293,11 @@ def train_one_epoch(model, train_loader, optimizer, epoch, config, device, logge
     # Memory optimization settings
     empty_cache_freq = getattr(config.MEMORY, 'EMPTY_CACHE_FREQ', 50) if hasattr(config, 'MEMORY') else 50
     
-    # Enable gradient checkpointing for memory savings
+    # DISABLE gradient checkpointing - it can hurt training dynamics
     for layer in [model.layer1, model.layer2, model.layer3, model.layer4]:
         for block in layer:
             if hasattr(block, 'use_checkpoint'):
-                block.use_checkpoint = True
+                block.use_checkpoint = False
     
     # Create progress bar
     pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS-1}")
@@ -309,14 +309,14 @@ def train_one_epoch(model, train_loader, optimizer, epoch, config, device, logge
     for i, (inputs, targets) in enumerate(pbar):
         inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
         
-        # Apply data augmentation (with reduced probability to save memory)
+        # Apply data augmentation (with reduced probability to improve stability)
         rand_val = torch.rand(1).item()
         use_mix = None
         
-        if use_mixup and rand_val < 0.3:  # 30% chance for mixup
+        if use_mixup and rand_val < 0.2:  # Reduced from 0.3 to 0.2
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
             use_mix = 'mixup'
-        elif use_cutmix and rand_val < 0.5:  # 20% chance for cutmix (0.5-0.3)
+        elif use_cutmix and rand_val < 0.3:  # Reduced from 0.5 to 0.3
             inputs, targets_a, targets_b, lam = cutmix_data(inputs, targets, cutmix_alpha)
             use_mix = 'cutmix'
         
