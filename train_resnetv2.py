@@ -67,6 +67,14 @@ def parse_args():
                         help='GPU ID')
     parser.add_argument('--workers', type=int, default=None,
                         help='Number of data loading workers')
+    parser.add_argument('--subset', type=float, default=None,
+                        help='Use a subset of data (0.0-1.0) for rapid prototyping')
+    parser.add_argument('--subset-size', type=int, default=None,
+                        help='Use a fixed number of samples for rapid prototyping')
+    parser.add_argument('--quick-train', action='store_true',
+                        help='Enable quick training mode with fewer epochs and more frequent validation')
+    parser.add_argument('--quick-epochs', type=int, default=10,
+                        help='Number of epochs for quick training mode (default: 10)')
     parser.add_argument('--opts', nargs='*', default=None,
                         help='Modify config options using KEY VALUE pairs')
     return parser.parse_args()
@@ -103,10 +111,23 @@ def update_config_from_args_and_opts(config, args):
         config.TRAIN.LR = args.lr
     if args.epochs:
         config.TRAIN.EPOCHS = args.epochs
+    elif args.quick_train:
+        config.TRAIN.EPOCHS = args.quick_epochs
     if args.output:
         config.OUTPUT = args.output
     if args.workers:
         config.DATA.NUM_WORKERS = args.workers
+    if args.subset is not None:
+        if not hasattr(config, 'DATA'):
+            setattr(config, 'DATA', Config())
+        setattr(config.DATA, 'SUBSET', args.subset)
+    if args.subset_size is not None:
+        if not hasattr(config, 'DATA'):
+            setattr(config, 'DATA', Config())
+        setattr(config.DATA, 'SUBSET_SIZE', args.subset_size)
+    if args.quick_train:
+        setattr(config, 'VALIDATE_FREQ', 1)  # Validate every epoch
+        setattr(config, 'SAVE_FREQ', 2)      # Save less frequently
     if args.model_variant:
         # Map user-friendly names to internal names
         variant_map = {
@@ -508,6 +529,17 @@ def main():
     
     # Create output directory
     output_dir = config.OUTPUT
+    
+    # Append subset info to output dir if using subset
+    if hasattr(config.DATA, 'SUBSET') and config.DATA.SUBSET is not None:
+        output_dir = f"{output_dir}_subset{int(config.DATA.SUBSET*100)}pct"
+    elif hasattr(config.DATA, 'SUBSET_SIZE') and config.DATA.SUBSET_SIZE is not None:
+        output_dir = f"{output_dir}_subset{config.DATA.SUBSET_SIZE}samples"
+    
+    # Append quick train info if using quick training
+    if args.quick_train:
+        output_dir = f"{output_dir}_quick{args.quick_epochs}ep"
+    
     os.makedirs(output_dir, exist_ok=True)
     
     # Setup logger
@@ -563,6 +595,28 @@ def main():
         augment=False
     )
     
+    # Create subset datasets for rapid prototyping if requested
+    subset_size = None
+    if hasattr(config.DATA, 'SUBSET') and config.DATA.SUBSET is not None:
+        # Use percentage of the dataset
+        subset_size = int(len(train_dataset) * config.DATA.SUBSET)
+        logger.info(f"Using {config.DATA.SUBSET:.1%} of training data ({subset_size}/{len(train_dataset)} samples)")
+    elif hasattr(config.DATA, 'SUBSET_SIZE') and config.DATA.SUBSET_SIZE is not None:
+        # Use fixed number of samples
+        subset_size = min(config.DATA.SUBSET_SIZE, len(train_dataset))
+        logger.info(f"Using {subset_size} training samples (out of {len(train_dataset)})")
+    
+    if subset_size is not None:
+        # Create subset for training data
+        indices = torch.randperm(len(train_dataset))[:subset_size].tolist()  # Convert to list
+        train_dataset = torch.utils.data.Subset(train_dataset, indices)
+        
+        # Also create a smaller validation set for faster evaluation
+        val_subset_size = min(subset_size // 5, len(val_dataset))
+        val_indices = torch.randperm(len(val_dataset))[:val_subset_size].tolist()  # Convert to list
+        val_dataset = torch.utils.data.Subset(val_dataset, val_indices)
+        logger.info(f"Using {val_subset_size} validation samples for quick evaluation")
+    
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -598,6 +652,10 @@ def main():
     # Get validation frequency
     validate_freq = getattr(config, 'VALIDATE_FREQ', 1)
     save_freq = getattr(config, 'SAVE_FREQ', 5)
+    
+    # Handle quick training mode
+    if args.quick_train:
+        logger.info(f"Quick training mode enabled: {config.TRAIN.EPOCHS} epochs, validating every epoch")
     
     # Resume from checkpoint if provided
     start_epoch = 0
