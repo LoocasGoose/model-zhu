@@ -1,6 +1,5 @@
 AUG:
   COLOR_JITTER: 0.4
-  CUTMIX: 0.2
   LABEL_SMOOTHING: 0.1
 DATA:
   BATCH_SIZE: 256  # Default value, overridden in command to 256
