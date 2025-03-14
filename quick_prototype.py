@@ -17,14 +17,14 @@ def parse_args():
                         help='Subset size: xs=1%%, s=5%%, m=10%%, l=25%%, xl=50%%')
     parser.add_argument('--epochs', '-e', type=int, default=5,
                         help='Number of epochs (default: 5)')
-    parser.add_argument('--batch-size', '-b', type=int, default=64,
-                        help='Batch size (default: 64)')
+    parser.add_argument('--batch-size', '-b', type=int, default=256,
+                        help='Batch size (default: 256)')
     parser.add_argument('--name', '-n', type=str, default=None,
                         help='Custom name for output directory')
     parser.add_argument('--gpu', '-g', type=int, default=0,
                         help='GPU ID (default: 0)')
-    parser.add_argument('--workers', '-w', type=int, default=4,
-                        help='Number of data loading workers (default: 4)')
+    parser.add_argument('--workers', '-w', type=int, default=32,
+                        help='Number of data loading workers (default: 32)')
     return parser.parse_args()
 
 def main():
