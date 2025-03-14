@@ -52,6 +52,9 @@ def parse_option():
 
     config = get_config(args)
     
+    # Defrost the config to make it mutable before modifying
+    config.defrost()
+    
     # Ensure command line args are properly set in config
     # Mixed precision training
     if args.use_amp:
@@ -82,6 +85,9 @@ def parse_option():
             setattr(config.DATA, 'PREFETCH_FACTOR', args.prefetch_factor)
         else:
             config.DATA.PREFETCH_FACTOR = args.prefetch_factor
+    
+    # Freeze the config again to make it immutable
+    config.freeze()
 
     return args, config
 
