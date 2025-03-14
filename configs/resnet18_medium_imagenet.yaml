@@ -1,6 +1,5 @@
 AUG:
   COLOR_JITTER: 0.4
-  LABEL_SMOOTHING: 0.1
 DATA:
   BATCH_SIZE: 256  # Default value, overridden in command to 256
   DATASET: "medium_imagenet"
@@ -15,7 +14,6 @@ MODEL:
   VARIANT: "resnet18"  
   NUM_CLASSES: 200
   DROP_RATE: 0.0
-  USE_SE: False  # No Squeeze-and-Excitation blocks in original ResNet
   ENABLE_CHECKPOINT: False  # Enabled via --enable-checkpoint in command
 TRAIN:
   EPOCHS: 100  # Default value, overridden in command to 20
@@ -30,8 +28,6 @@ TRAIN:
     WEIGHT_DECAY: 0.0001
     NESTEROV: True
   USE_AMP: True  # Enabled via --use-amp in command
-  GRADIENT_CLIP_VAL: 1.0
-  GRADIENT_ACCUMULATION_STEPS: 1
 MEMORY:
   EMPTY_CACHE_FREQ: 50  # Empty CUDA cache every 50 batches
 OUTPUT: "output/resnet18_medium_imagenet"
