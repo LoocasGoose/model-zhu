@@ -13,7 +13,6 @@ MODEL:
   NAME: "resnet"  # Original ResNet, not ResNetV2
   NUM_CLASSES: 200
   DROP_RATE: 0.0
-  ENABLE_CHECKPOINT: False  # Enabled via --enable-checkpoint in command
 TRAIN:
   EPOCHS: 100  # Default value, overridden in command to 20
   WARMUP_EPOCHS: 5
