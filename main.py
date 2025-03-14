@@ -45,6 +45,8 @@ def parse_option():
     parser.add_argument("--use-amp", action="store_true", help="Use mixed precision training")
     parser.add_argument("--enable-checkpoint", action="store_true", help="Enable gradient checkpointing")
     parser.add_argument("--validate-freq", type=int, default=1, help="Validate every N epochs")
+    parser.add_argument("--prefetch-factor", type=int, default=2, help="Number of batches loaded in advance by dataloader workers")
+    parser.add_argument("--pin-memory", action="store_true", help="Pin memory in dataloader for potentially faster data transfer")
 
     args = parser.parse_args()
 
@@ -54,8 +56,11 @@ def parse_option():
 
 
 def main(config):
-    # Enable cuDNN benchmark for faster performance
+    # Enable cuDNN benchmark for faster performance and set memory allocation to be more efficient
     torch.backends.cudnn.benchmark = True
+    # Allow TF32 on Ampere GPUs for faster computation
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
     
     dataset_train, dataset_val, dataset_test, data_loader_train, data_loader_val, data_loader_test = build_loader(
         config
@@ -87,12 +92,12 @@ def main(config):
     lr_scheduler = CosineAnnealingLR(optimizer, config.TRAIN.EPOCHS)
 
     # Initialize gradient scaler for mixed precision training
-    use_amp = getattr(config.TRAIN, 'USE_AMP', False)
+    use_amp = config.TRAIN.USE_AMP if hasattr(config.TRAIN, 'USE_AMP') else False
     scaler = GradScaler() if use_amp else None
     logger.info(f"Using mixed precision training: {use_amp}")
     
     # Get validation frequency
-    validate_freq = getattr(config, 'VALIDATE_FREQ', 1)
+    validate_freq = config.VALIDATE_FREQ if hasattr(config, 'VALIDATE_FREQ') else 1
     logger.info(f"Validating every {validate_freq} epochs")
 
     max_accuracy = 0.0
@@ -130,6 +135,9 @@ def main(config):
 
         lr_scheduler.step()
 
+        # Clean up GPU memory after each epoch
+        torch.cuda.empty_cache()
+
         log_stats = {"epoch": epoch, "n_params": n_parameters, "n_flops": n_flops,
                      "train_acc": train_acc1, "train_loss": train_loss, 
                      "val_acc": val_acc1, "val_loss": val_loss}
@@ -166,16 +174,17 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
     # Get gradient clipping value if configured
     grad_clip_val = getattr(config.TRAIN, 'GRADIENT_CLIP_VAL', 0.0)
     
-    optimizer.zero_grad()  # Zero gradients at the start of epoch
+    # Wrap with tqdm progress bar - update less frequently for less overhead
+    pbar = tqdm(data_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS}", ncols=100, leave=False)
     
-    # Create tqdm progress bar
-    pbar = tqdm(data_loader, desc=f"Epoch {epoch}/{config.TRAIN.EPOCHS}", leave=True)
+    # Pre-fetch and pre-allocate next batch data
+    optimizer.zero_grad(set_to_none=True)  # More efficient than standard zero_grad
     
     for idx, (samples, targets) in enumerate(pbar):
         # Measure data loading time
         data_time.update(time.time() - end)
         
-        # Move data to device and prefetch next batch
+        # Move data to device with non_blocking for potential overlap
         samples = samples.cuda(non_blocking=True)
         targets = targets.cuda(non_blocking=True)
         
@@ -195,7 +204,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
                 
             scaler.step(optimizer)
             scaler.update()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)  # More efficient than standard zero_grad
         else:
             # Standard forward/backward pass without mixed precision
             outputs = model(samples)
@@ -209,11 +218,10 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
                 torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_val)
                 
             optimizer.step()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)  # More efficient
 
         # Calculate accuracy
-        with torch.no_grad():
-            (acc1,) = accuracy(outputs, targets)
+        (acc1,) = accuracy(outputs, targets)
             
         # Update metrics
         loss_meter.update(loss.item(), targets.size(0))
@@ -221,19 +229,18 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
         batch_time.update(time.time() - end)
         end = time.time()
 
-        # Update progress bar with metrics
-        lr = optimizer.param_groups[0]["lr"]
-        memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
-        pbar.set_postfix({
-            'loss': f'{loss_meter.avg:.4f}',
-            'acc': f'{acc1_meter.avg:.2f}%',
-            'lr': f'{lr:.6f}',
-            'mem': f'{memory_used:.0f}MB',
-            'time/img': f'{batch_time.avg:.3f}s'
-        })
+        # Update progress bar less frequently to reduce overhead
+        if idx % 10 == 0:
+            lr = optimizer.param_groups[0]["lr"]
+            memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
+            pbar.set_postfix({
+                'loss': f'{loss_meter.avg:.4f}',
+                'acc': f'{acc1_meter.avg:.2f}%',
+                'time/img': f'{batch_time.avg:.3f}s'
+            })
             
-        # Periodically empty CUDA cache to prevent fragmentation (every 100 batches)
-        if idx > 0 and idx % 100 == 0:
+        # Periodically empty CUDA cache to prevent fragmentation (every 200 batches)
+        if idx > 0 and idx % 200 == 0:
             torch.cuda.empty_cache()
 
     # Print final epoch stats
@@ -242,7 +249,7 @@ def train_one_epoch(config, model, criterion, data_loader, optimizer, epoch, sca
         f"EPOCH {epoch} training summary: "
         f"loss {loss_meter.avg:.4f}, "
         f"accuracy {acc1_meter.avg:.2f}%, "
-        f"lr {lr:.6f}, "
+        f"lr {optimizer.param_groups[0]['lr']:.6f}, "
         f"time {datetime.timedelta(seconds=int(epoch_time))}"
     )
     
@@ -266,7 +273,6 @@ def validate(config, data_loader, model):
         images = images.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
 
-        # Disable mixup for validation to save compute and get real accuracy
         # compute output with mixed precision for efficiency
         if use_amp:
             with autocast():
@@ -286,7 +292,7 @@ def validate(config, data_loader, model):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        # Print progress less frequently
+        # Print progress less frequently for less overhead
         if idx % 20 == 0 or idx == len(data_loader) - 1:
             memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
             logger.info(
@@ -308,7 +314,11 @@ def evaluate(config, data_loader, model):
     # Determine whether to use mixed precision
     use_amp = getattr(config.TRAIN, 'USE_AMP', False)
     
-    for idx, (images, _) in enumerate(tqdm(data_loader)):
+    # Use a small batch aggregation to reduce memory pressure
+    batch_size = 10
+    aggregated_outputs = []
+    
+    for idx, (images, _) in enumerate(tqdm(data_loader, desc="Evaluating")):
         images = images.cuda(non_blocking=True)
         
         # Use mixed precision for inference if enabled
@@ -318,7 +328,17 @@ def evaluate(config, data_loader, model):
         else:
             output = model(images)
             
-        preds.append(output.cpu().numpy())
+        aggregated_outputs.append(output.cpu().numpy())
+        
+        # Periodically concatenate and clear to save memory
+        if len(aggregated_outputs) >= batch_size or idx == len(data_loader) - 1:
+            preds.append(np.concatenate(aggregated_outputs))
+            aggregated_outputs = []
+            
+            # Explicitly clear GPU memory
+            if idx % 50 == 0:
+                torch.cuda.empty_cache()
+    
     preds = np.concatenate(preds)
     return preds
 

@@ -37,7 +37,6 @@ class ResNetBlock(nn.Module):
         # First convolutional layer with batch normalization
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)  # Use inplace ReLU for better memory efficiency
         
         # Second convolutional layer with batch normalization
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
@@ -54,10 +53,16 @@ class ResNetBlock(nn.Module):
             # Identity shortcut - more efficient than empty Sequential
             self.shortcut = nn.Identity()
             
-        # For gradient checkpointing
-        self.use_checkpoint = False
+        # Use inplace ReLU to save memory
+        self.relu = nn.ReLU(inplace=True)
 
-    def _forward_impl(self, x):
+    def forward(self, x):
+        """
+        Compute a forward pass.
+        
+        x: batch of images of shape (batch_size, num_channels, width, height)
+        returns: result of passing x through this block
+        """
         # Save input for the shortcut
         identity = self.shortcut(x)
         
@@ -70,23 +75,11 @@ class ResNetBlock(nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
         
-        # Add shortcut to the output and apply activation (inplace operation)
-        out.add_(identity)  # Inplace addition saves memory
-        out = self.relu(out)  # Inplace ReLU
+        # Add shortcut to the output and apply activation
+        out += identity  # Using += is more memory efficient
+        out = self.relu(out)
         
         return out
-        
-    def forward(self, x):
-        """
-        Compute a forward pass with optional gradient checkpointing for memory efficiency.
-        
-        x: batch of images of shape (batch_size, num_channels, width, height)
-        returns: result of passing x through this block
-        """
-        if self.use_checkpoint and x.requires_grad:
-            return torch.utils.checkpoint.checkpoint(self._forward_impl, x)
-        else:
-            return self._forward_impl(x)
 
 
 class ResNet18(nn.Module):
@@ -101,12 +94,12 @@ class ResNet18(nn.Module):
                                padding=1,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)  # Use inplace ReLU for memory efficiency
+        self.relu = nn.ReLU(inplace=True)
         self.layer1 = self.make_block(out_channels=64, stride=1)
         self.layer2 = self.make_block(out_channels=128, stride=2)
         self.layer3 = self.make_block(out_channels=256, stride=2)
         self.layer4 = self.make_block(out_channels=512, stride=2)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))  # Define as module instead of functional
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.linear = nn.Linear(512, num_classes)
         
         # Initialize weights properly
@@ -117,17 +110,8 @@ class ResNet18(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
                 
-        # Enable gradient checkpointing for memory-efficient training
+        # Store gradient checkpointing flag
         self.enable_checkpoint = enable_checkpoint
-        if enable_checkpoint:
-            self._enable_checkpointing()
-            
-    def _enable_checkpointing(self):
-        # Enable gradient checkpointing in all blocks
-        for layer in [self.layer1, self.layer2, self.layer3, self.layer4]:
-            for block in layer:
-                # Fix for type safety - use proper attribute assignment
-                setattr(block, 'use_checkpoint', True)
 
     def make_block(self, out_channels, stride):
         # Read the following, and uncomment it when you understand it, no need to add more code
@@ -136,16 +120,27 @@ class ResNet18(nn.Module):
             layers.append(ResNetBlock(self.in_channels, out_channels, stride))
             self.in_channels = out_channels
         return nn.Sequential(*layers)
+        
+    def _run_layer(self, layer, x):
+        # Helper function to run a layer with potential checkpointing
+        if self.enable_checkpoint and x.requires_grad:
+            return torch.utils.checkpoint.checkpoint(layer, x, preserve_rng_state=False)
+        else:
+            return layer(x)
 
     def forward(self, x):
-        # Optimized forward pass using module attributes instead of functional calls
+        # Initial convolution and batch norm
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        
+        # Apply layers with optional gradient checkpointing
+        x = self._run_layer(self.layer1, x)
+        x = self._run_layer(self.layer2, x)
+        x = self._run_layer(self.layer3, x)
+        x = self._run_layer(self.layer4, x)
+        
+        # Final pooling and classification
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.linear(x)
