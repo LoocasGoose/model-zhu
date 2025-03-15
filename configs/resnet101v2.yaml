@@ -2,17 +2,28 @@ BASE: ['resnetv2_base.yaml']
 MODEL:
   VARIANT: "resnet101"  # Will be renamed to resnet101v2 in code
   USE_SE: True  # Enable Squeeze-and-Excitation blocks for improved accuracy
-  DROP_RATE: 0.3  # Higher dropout for deep network regularization
+  DROP_RATE: 0.3  # Dropout for classifier head
+  STOCHASTIC_DEPTH_RATE: 0.3  # Slightly higher stochastic depth for deeper network
+  ZERO_INIT_RESIDUAL: True  # Zero-initialize the last BN in each residual branch
 DATA:
-  BATCH_SIZE: 64  # Smaller batch size for deeper network
+  BATCH_SIZE: 64  # Smaller batch size due to deeper network
 TRAIN:
-  EPOCHS: 60  # Standard epochs for large networks
-  LR: 0.005  # Lower initial learning rate for deeper networks
+  EPOCHS: 60
+  LR: 0.01
   OPTIMIZER:
     NAME: "sgd"
+    MOMENTUM: 0.9
     WEIGHT_DECAY: 0.0001  # Standard weight decay
-  GRADIENT_ACCUMULATION_STEPS: 4  # More gradient accumulation to increase effective batch size
-  GRADIENT_CLIP_VAL: 1.0  # Clip gradients for stability in deeper networks
+    NESTEROV: True
+  WARMUP_EPOCHS: 10  # Extended warmup for deeper network
+  GRADIENT_ACCUMULATION_STEPS: 4  # More gradient accumulation steps to compensate for smaller batch
+  GRADIENT_CLIP_VAL: 1.0
+AUG:
+  MIXUP: 0.4
+  CUTMIX: 0.4
+  LABEL_SMOOTHING: 0.1
+  COLOR_JITTER: 0.5
+  RANDOM_ERASING: 0.25
 MEMORY:
   EMPTY_CACHE_FREQ: 20  # Clear memory more frequently for larger model
-OUTPUT: "output/resnet101v2_medium_imagenet" 
+OUTPUT: "output/resnet101v2_medium_imagenet_antioverfitting" 
