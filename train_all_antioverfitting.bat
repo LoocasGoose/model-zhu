@@ -2,7 +2,7 @@
 echo ResNetV2 Anti-Overfitting Training Script
 echo ----------------------------------------
 echo 1. Train ResNet18v2
-echo 2. Train ResNet50v2
+echo 2. Train ResNet50v2 (batch size 64)
 echo 3. Train ResNet101v2
 echo 4. Exit
 echo.
@@ -13,7 +13,7 @@ if "%choice%"=="1" (
     echo Starting ResNet18v2 training...
     call train_antioverfitting.bat
 ) else if "%choice%"=="2" (
-    echo Starting ResNet50v2 training...
+    echo Starting ResNet50v2 training with batch size 64...
     call train_antioverfitting_resnet50.bat
 ) else if "%choice%"=="3" (
     echo Starting ResNet101v2 training...

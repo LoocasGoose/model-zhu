@@ -6,17 +6,17 @@ MODEL:
   STOCHASTIC_DEPTH_RATE: 0.2  # Added stochastic depth for improved regularization
   ZERO_INIT_RESIDUAL: True  # Zero-initialize the last BN in each residual branch
 DATA:
-  BATCH_SIZE: 128  # Standard batch size for ResNet50
+  BATCH_SIZE: 64  # Reduced batch size for better generalization
 TRAIN:
   EPOCHS: 60  # Standard epochs for medium-sized networks
-  LR: 0.01  # Literature-standard LR for ResNet50
+  LR: 0.005  # Learning rate scaled down for smaller batch size (linear scaling rule)
   OPTIMIZER:
     NAME: "sgd"
     MOMENTUM: 0.9
     WEIGHT_DECAY: 0.0001  # Standard weight decay from literature
     NESTEROV: True  # Enable Nesterov momentum for better convergence
   WARMUP_EPOCHS: 10  # Extended warmup period for more stable training
-  GRADIENT_ACCUMULATION_STEPS: 2  # Increase effective batch size with gradient accumulation
+  GRADIENT_ACCUMULATION_STEPS: 4  # Increased accumulation steps to maintain effective batch size
   GRADIENT_CLIP_VAL: 1.0  # Added gradient clipping for stability
 AUG:
   MIXUP: 0.4  # Increased mixup alpha based on literature
@@ -24,4 +24,6 @@ AUG:
   LABEL_SMOOTHING: 0.1  # Standard label smoothing value
   COLOR_JITTER: 0.5  # Increased color jittering
   RANDOM_ERASING: 0.25  # Added random erasing with 25% probability
+MEMORY:
+  EMPTY_CACHE_FREQ: 20  # Empty cache more frequently with smaller batches
 OUTPUT: "output/resnet50v2_medium_imagenet_antioverfitting" 
