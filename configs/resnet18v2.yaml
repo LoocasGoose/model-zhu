@@ -2,19 +2,26 @@ BASE: ['resnetv2_base.yaml']
 MODEL:
   VARIANT: "resnet18"  # Will be renamed to resnet18v2 in code
   USE_SE: True  # Enable Squeeze-and-Excitation blocks for ResNet18v2 (smaller model can benefit from attention)
-  DROP_RATE: 0.0  # Removed dropout to reduce regularization
+  DROP_RATE: 0.3  # Increased dropout for stronger regularization
+  STOCHASTIC_DEPTH_RATE: 0.2  # Added stochastic depth for ResNet (literature value 0.2)
+  ZERO_INIT_RESIDUAL: True  # Zero-initialize the last BN in each residual branch
 DATA:
-  BATCH_SIZE: 256  # ResNet18v2 is smaller, can use larger batch sizes
+  BATCH_SIZE: 128  # Reduced batch size for better generalization 
 TRAIN:
   EPOCHS: 100  # Literature shows smaller models may need more epochs
-  LR: 0.01  # Reduced LR for better stability
+  LR: 0.01  # Base learning rate
   OPTIMIZER:
     NAME: "sgd"
-    WEIGHT_DECAY: 0.00005  # Reduced weight decay to prevent over-regularization
-  WARMUP_EPOCHS: 5  # From base config
+    MOMENTUM: 0.9
+    WEIGHT_DECAY: 0.0001  # Increased weight decay for stronger regularization (standard from literature)
+    NESTEROV: True
+  WARMUP_EPOCHS: 10  # Extended warmup period for more stable training
   GRADIENT_ACCUMULATION_STEPS: 1  # Consider 2 if memory constrained
+  GRADIENT_CLIP_VAL: 1.0  # Added gradient clipping for stability
 AUG:
-  MIXUP: 0.1  # Reduced mixup alpha
-  CUTMIX: 0.1  # Reduced cutmix alpha
-  LABEL_SMOOTHING: 0.05  # Reduced label smoothing
-OUTPUT: "output/resnet18v2_medium_imagenet" 
+  MIXUP: 0.4  # Increased mixup alpha based on literature
+  CUTMIX: 0.4  # Increased cutmix alpha based on literature
+  LABEL_SMOOTHING: 0.1  # Standard label smoothing value
+  COLOR_JITTER: 0.5  # Increased color jittering
+  RANDOM_ERASING: 0.25  # Added random erasing with 25% probability
+OUTPUT: "output/resnet18v2_medium_imagenet_antioverfitting" 

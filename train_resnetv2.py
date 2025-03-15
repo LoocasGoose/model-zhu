@@ -18,6 +18,7 @@ import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 import logging
+import torchvision.transforms as transforms
 
 from models.resnetv2 import (
     resnet18, resnet50, resnet101,
@@ -201,6 +202,7 @@ def get_model(config):
     use_se = getattr(config.MODEL, 'USE_SE', False)
     drop_rate = getattr(config.MODEL, 'DROP_RATE', 0.0)
     zero_init_residual = getattr(config.MODEL, 'ZERO_INIT_RESIDUAL', True)
+    stochastic_depth_rate = getattr(config.MODEL, 'STOCHASTIC_DEPTH_RATE', 0.0)
     
     # Map standard variant names to functions
     model_dict = {
@@ -217,7 +219,8 @@ def get_model(config):
         num_classes=num_classes,
         use_se=use_se,
         dropout_rate=drop_rate,
-        zero_init_residual=zero_init_residual
+        zero_init_residual=zero_init_residual,
+        stochastic_depth_rate=stochastic_depth_rate
     )
     
     return model
@@ -292,6 +295,66 @@ def get_scheduler(config, optimizer):
     return scheduler
 
 
+class RandomErasing:
+    """
+    Randomly erase rectangular regions from the image.
+    Implementation based on https://arxiv.org/abs/1708.04896
+    """
+    def __init__(self, probability=0.5, sl=0.02, sh=0.4, r1=0.3, r2=1/0.3, value=0):
+        self.probability = probability
+        self.sl = sl  # min erasing area
+        self.sh = sh  # max erasing area
+        self.r1 = r1  # min aspect ratio
+        self.r2 = r2  # max aspect ratio
+        self.value = value  # erasing value
+        
+    def __call__(self, img):
+        if torch.rand(1) > self.probability:
+            return img
+            
+        c, h, w = img.shape
+        area = h * w
+        
+        for attempt in range(100):  # try 100 times
+            target_area = torch.rand(1) * (self.sh - self.sl) + self.sl
+            target_area = target_area * area
+            
+            aspect_ratio = torch.rand(1) * (self.r2 - self.r1) + self.r1
+            
+            # Calculate target height and width
+            h_t = int(torch.sqrt(target_area * aspect_ratio))
+            w_t = int(torch.sqrt(target_area / aspect_ratio))
+            
+            if h_t < h and w_t < w:
+                # Choose random top-left corner
+                x1 = torch.randint(0, w - w_t + 1, size=(1,)).item()
+                y1 = torch.randint(0, h - h_t + 1, size=(1,)).item()
+                
+                # Erase the region
+                if isinstance(self.value, (int, float)):
+                    img[:, y1:y1+h_t, x1:x1+w_t] = self.value
+                else:
+                    img[:, y1:y1+h_t, x1:x1+w_t] = torch.rand_like(img[:, y1:y1+h_t, x1:x1+w_t])
+                return img
+                
+        # If all attempts fail, return original image
+        return img
+
+
+def apply_random_erasing(image_batch, probability=0.5):
+    """Apply random erasing augmentation to a batch of images."""
+    # Initialize random erasing
+    eraser = RandomErasing(probability=probability)
+    
+    # Apply to each image in the batch
+    images_erased = []
+    for img in image_batch:
+        images_erased.append(eraser(img))
+    
+    # Stack back to batch
+    return torch.stack(images_erased)
+
+
 def train_one_epoch(model, train_loader, optimizer, epoch, config, device, logger, scaler=None):
     """Train the model for one epoch with memory optimizations."""
     model.train()
@@ -309,6 +372,7 @@ def train_one_epoch(model, train_loader, optimizer, epoch, config, device, logge
     use_cutmix = getattr(config.AUG, 'CUTMIX', 0) > 0
     mixup_alpha = getattr(config.AUG, 'MIXUP', 0.2)
     cutmix_alpha = getattr(config.AUG, 'CUTMIX', 0.2)
+    random_erase_prob = getattr(config.AUG, 'RANDOM_ERASING', 0.0)
     label_smoothing = getattr(config.AUG, 'LABEL_SMOOTHING', 0.1)
     
     # Memory optimization settings
@@ -330,16 +394,21 @@ def train_one_epoch(model, train_loader, optimizer, epoch, config, device, logge
     for i, (inputs, targets) in enumerate(pbar):
         inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
         
-        # Apply data augmentation (with reduced probability to improve stability)
+        # Apply data augmentation
         rand_val = torch.rand(1).item()
         use_mix = None
         
-        if use_mixup and rand_val < 0.2:  # Reduced from 0.3 to 0.2
+        # Apply mixup/cutmix with controlled probability
+        if use_mixup and rand_val < 0.3:  # 30% chance for mixup
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
             use_mix = 'mixup'
-        elif use_cutmix and rand_val < 0.3:  # Reduced from 0.5 to 0.3
+        elif use_cutmix and rand_val < 0.6:  # 30% chance for cutmix (0.3-0.6 range)
             inputs, targets_a, targets_b, lam = cutmix_data(inputs, targets, cutmix_alpha)
             use_mix = 'cutmix'
+        
+        # Apply random erasing (operates on individual images, not batches)
+        if random_erase_prob > 0:
+            inputs = apply_random_erasing(inputs, probability=random_erase_prob)
         
         # Use mixed precision for forward pass if available
         if use_amp and scaler is not None:
@@ -401,7 +470,16 @@ def train_one_epoch(model, train_loader, optimizer, epoch, config, device, logge
         total_loss += batch_loss
         _, predicted = outputs.max(1)
         total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
+        
+        # For accuracy calculation, handle mixed targets correctly
+        if use_mix:
+            correct_a = predicted.eq(targets_a).float()
+            correct_b = predicted.eq(targets_b).float()
+            correct_count = (lam * correct_a + (1 - lam) * correct_b).sum().item()
+        else:
+            correct_count = predicted.eq(targets).sum().item()
+        
+        correct += correct_count
         
         # Update progress bar
         accuracy = 100.0 * correct / total
@@ -566,6 +644,22 @@ def main():
     model = get_model(config)
     model = model.to(device)
     logger.info(f"Created {model_name} model")
+    
+    # Log regularization settings
+    if hasattr(config.MODEL, 'DROP_RATE'):
+        logger.info(f"Dropout rate: {config.MODEL.DROP_RATE}")
+    if hasattr(config.MODEL, 'STOCHASTIC_DEPTH_RATE'):
+        logger.info(f"Stochastic depth rate: {config.MODEL.STOCHASTIC_DEPTH_RATE}")
+    if hasattr(config.TRAIN.OPTIMIZER, 'WEIGHT_DECAY'):
+        logger.info(f"Weight decay: {config.TRAIN.OPTIMIZER.WEIGHT_DECAY}")
+    if hasattr(config.AUG, 'MIXUP'):
+        logger.info(f"Mixup alpha: {config.AUG.MIXUP}")
+    if hasattr(config.AUG, 'CUTMIX'):
+        logger.info(f"CutMix alpha: {config.AUG.CUTMIX}")
+    if hasattr(config.AUG, 'RANDOM_ERASING'):
+        logger.info(f"Random erasing probability: {config.AUG.RANDOM_ERASING}")
+    if hasattr(config.AUG, 'LABEL_SMOOTHING'):
+        logger.info(f"Label smoothing: {config.AUG.LABEL_SMOOTHING}")
     
     # Log parameter count
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

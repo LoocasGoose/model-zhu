@@ -15,6 +15,27 @@ import numpy as np
 import math
 
 
+class StochasticDepth(nn.Module):
+    """
+    Implements Stochastic Depth (https://arxiv.org/abs/1603.09382) for residual networks.
+    During training, randomly drops residual branches with probability 1-survival_prob.
+    During inference, all branches are kept but scaled by survival_prob.
+    """
+    def __init__(self, survival_prob=0.8):
+        super(StochasticDepth, self).__init__()
+        self.survival_prob = survival_prob
+        
+    def forward(self, x, residual):
+        # During inference, scale the residual
+        if not self.training:
+            return x + self.survival_prob * residual
+            
+        # During training, randomly drop the residual
+        shape = [x.shape[0]] + [1] * (x.ndim - 1)  # Shape for broadcasting
+        random_tensor = torch.rand(shape, device=x.device) < self.survival_prob
+        return x + random_tensor * residual
+
+
 class SELayer(nn.Module):
     """
     Squeeze-and-Excitation block for channel-wise attention.
@@ -41,9 +62,16 @@ class SELayer(nn.Module):
 class ResNetBlock(nn.Module):
     expansion = 1  # Basic block doesn't change the number of channels
     
-    def __init__(self, in_channels, out_channels, stride=1, use_se=False):
+    def __init__(self, in_channels, out_channels, stride=1, use_se=False, survival_prob=1.0):
         """
         Residual block for ResNet architecture.
+        
+        Args:
+            in_channels: Number of input channels
+            out_channels: Number of output channels
+            stride: Stride for first convolution and shortcut
+            use_se: Whether to use squeeze-excitation
+            survival_prob: Probability for stochastic depth (1.0 = keep all)
         """
         super(ResNetBlock, self).__init__()
         
@@ -70,6 +98,11 @@ class ResNetBlock(nn.Module):
             # Identity shortcut
             self.shortcut = nn.Identity()
         
+        # Stochastic depth for improved regularization
+        self.stochastic_depth = None
+        if survival_prob < 1.0:
+            self.stochastic_depth = StochasticDepth(survival_prob)
+        
         # For gradient checkpointing - disabled by default
         self.use_checkpoint = False
     
@@ -89,9 +122,15 @@ class ResNetBlock(nn.Module):
         # Apply SE if enabled
         out = self.se(out)
         
-        # Add shortcut to the output and apply activation (non-inplace)
-        out = out + identity
-        out = self.relu(out)  # Non-inplace ReLU
+        # Apply stochastic depth if enabled
+        if self.stochastic_depth is not None:
+            out = self.stochastic_depth(out, identity)
+        else:
+            # Add shortcut to the output
+            out = out + identity
+        
+        # Apply final activation (non-inplace)
+        out = self.relu(out)
         
         return out
 
@@ -108,7 +147,7 @@ class ResNetBlock(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4  # Bottleneck block expands the number of channels by 4
     
-    def __init__(self, in_channels, out_channels, stride=1, use_se=False):
+    def __init__(self, in_channels, out_channels, stride=1, use_se=False, survival_prob=1.0):
         """
         Bottleneck block for ResNet50/101/152.
         """
@@ -140,6 +179,11 @@ class Bottleneck(nn.Module):
         else:
             self.shortcut = nn.Identity()
         
+        # Stochastic depth for improved regularization
+        self.stochastic_depth = None
+        if survival_prob < 1.0:
+            self.stochastic_depth = StochasticDepth(survival_prob)
+        
         # For gradient checkpointing - disabled by default
         self.use_checkpoint = False
     
@@ -160,8 +204,14 @@ class Bottleneck(nn.Module):
         # Apply SE if enabled
         out = self.se(out)
         
-        # Non-inplace operations
-        out = out + identity
+        # Apply stochastic depth if enabled
+        if self.stochastic_depth is not None:
+            out = self.stochastic_depth(out, identity)
+        else:
+            # Add shortcut to the output
+            out = out + identity
+        
+        # Apply final activation
         out = self.relu(out)
         
         return out
@@ -177,7 +227,7 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, num_classes=200, zero_init_residual=False, use_se=False, dropout_rate=0):
+    def __init__(self, block, layers, num_classes=200, zero_init_residual=False, use_se=False, dropout_rate=0, stochastic_depth_rate=0):
         """
         Initialize ResNet with the specified block type and layer configuration.
         
@@ -188,6 +238,7 @@ class ResNet(nn.Module):
             zero_init_residual: Whether to initialize the residual branch BN weight as zero
             use_se: Whether to use Squeeze-and-Excitation blocks
             dropout_rate: Dropout probability before the final fully connected layer
+            stochastic_depth_rate: Rate of stochastic depth (0 means no stochastic depth)
         """
         super(ResNet, self).__init__()
         self.in_channels = 64
@@ -198,11 +249,14 @@ class ResNet(nn.Module):
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=False)  # Changed to non-inplace ReLU
         
+        # Build network with stochastic depth if requested
+        self.stochastic_depth_rate = stochastic_depth_rate
+        
         # Residual layers
-        self.layer1 = self._make_layer(block, 64, layers[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        self.layer1 = self._make_layer(block, 64, layers[0], stride=1, stochastic_depth_rate=stochastic_depth_rate, block_id=0, total_blocks=sum(layers))
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2, stochastic_depth_rate=stochastic_depth_rate, block_id=layers[0], total_blocks=sum(layers))
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=2, stochastic_depth_rate=stochastic_depth_rate, block_id=layers[0]+layers[1], total_blocks=sum(layers))
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2, stochastic_depth_rate=stochastic_depth_rate, block_id=layers[0]+layers[1]+layers[2], total_blocks=sum(layers))
         
         # Pooling and classification
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
@@ -225,18 +279,33 @@ class ResNet(nn.Module):
                 elif isinstance(m, ResNetBlock):
                     nn.init.constant_(m.bn2.weight, 0)
     
-    def _make_layer(self, block, out_channels, blocks, stride=1):
+    def _make_layer(self, block, out_channels, blocks, stride=1, stochastic_depth_rate=0, block_id=0, total_blocks=0):
         layers = []
         
+        # Calculate stochastic depth probability for each block
+        sd_probs = []
+        if stochastic_depth_rate > 0 and total_blocks > 0:
+            # Linear decay of survival probability from 1.0 to 1-stochastic_depth_rate
+            # Later blocks have higher dropout probability (lower survival rate)
+            for i in range(blocks):
+                # Calculate the current block position in the overall architecture
+                curr_block_position = block_id + i
+                # Linearly decreasing survival probability
+                sd_prob = 1.0 - (curr_block_position / total_blocks) * stochastic_depth_rate
+                sd_probs.append(sd_prob)
+        else:
+            # If stochastic depth is disabled, use 1.0 for all blocks
+            sd_probs = [1.0] * blocks
+        
         # First block with possibly downsampling (stride > 1)
-        layers.append(block(self.in_channels, out_channels, stride, self.use_se))
+        layers.append(block(self.in_channels, out_channels, stride, self.use_se, survival_prob=sd_probs[0]))
         
         # Update in_channels after applying first block
         self.in_channels = out_channels * block.expansion
         
         # Rest of the blocks with stride=1
-        for _ in range(1, blocks):
-            layers.append(block(self.in_channels, out_channels, use_se=self.use_se))
+        for i in range(1, blocks):
+            layers.append(block(self.in_channels, out_channels, use_se=self.use_se, survival_prob=sd_probs[i]))
         
         return nn.Sequential(*layers)
     
